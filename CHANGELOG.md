@@ -5,6 +5,13 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 文档
+
+- 安装章节改为 DSH 生态的两种方式：本地目录 / 压缩包（`dsh plugin --profile web add link:...`、`file:...`，
+  含 Release tarball），以及直接从 GitHub 安装（`dsh plugin --profile web add github:HonestShine/dsh-desktop-notify`）。
+
 ## [0.1.0] - 2026-11-07
 
 首个公开版本。适配 DeepSeek Harness `0.2.0-rc.2` / `0.2.1-rc.x` / `0.2.2-rc.1`。

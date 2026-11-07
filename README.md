@@ -51,30 +51,56 @@ DSH 目前以 RC 形式发布（`0.2.0-rc.x`、`0.2.1-rc.x`、`0.2.2-rc.x`）；
 
 ## 安装
 
-### 从源码安装
+两种方式，任选其一。装完重启 `dsh web`（桌面端则完全退出后重开），再 F5 刷新浏览器，即可在 **设置 → 通知提醒** 看到配置页。
+
+### 方式 A：已有本插件的完整资源包（本地目录 / 压缩包）（推荐）
+
+适用于别人直接发你一个 zip，或你手上已有一份解压好的插件目录（目录里应有 `package.json`、`cordis.patch.yml`、`lib/`、`assets/`、`README.md`）。
 
 ```powershell
-git clone https://github.com/HonestShine/dsh-desktop-notify.git
-cd dsh-desktop-notify
-pnpm install          # 安装 node-notifier@12.1.0
+# 1) 解压到一个固定、以后不会移动或删除的目录（不要放临时目录/下载目录）
+#    例：D:\Plugins\dsh-desktop-notify
+#    要安装的是「包含 package.json 的那一层」，不要多套一层同名目录
+
+# 2) 确认关键文件都在（缺 assets/ 会导致没图、没声）
+Test-Path "D:\Plugins\dsh-desktop-notify\package.json",
+          "D:\Plugins\dsh-desktop-notify\cordis.patch.yml",
+          "D:\Plugins\dsh-desktop-notify\lib\winrt.js",
+          "D:\Plugins\dsh-desktop-notify\assets\notify.wav"
+
+# 3) 如果之前装过同名插件，先卸载避免版本冲突
+dsh plugin --profile web remove dsh-desktop-notify
+
+# 4) 用绝对路径安装（路径含空格要加引号）
+dsh plugin --profile web add link:D:\Plugins\dsh-desktop-notify
 ```
 
-需要 Node.js `^22.22.2 || ^24.15.0 || >=26.0.0`（`node-notifier@12` 的引擎要求，已写入 `package.json` 的 `engines`）。
+说明：
 
-然后通过当前桌面端内置的 `plugin_manager` 安装本目录（绝对路径）：
+- `link:` 是软链安装：源目录里的文件改了立即生效；但安装后不能移动/重命名该目录，移动了要重新 `add` 一次。
+- 本地目录没有 `node_modules` 时，`link:` 安装前先在插件目录执行 `pnpm install`（macOS/Linux 的 terminal-notifier / notify-send 适配需要 `node-notifier`；Windows 走 WinRT，通常不装也能弹通知）。
+- 想用拷贝安装：`dsh plugin --profile web add file:D:\Plugins\dsh-desktop-notify`（pnpm 会把依赖一起装；此后源目录再改不会同步，需要重新 `add`）。
+- Release 里的 `dsh-desktop-notify-0.1.0.tgz` 也可以直接装：`dsh plugin --profile web add file:D:\Downloads\dsh-desktop-notify-0.1.0.tgz`。
 
-- 首次安装通常返回 `application: applied`；若返回 `restart-required`，完全退出桌面端（含托盘）后重新打开。
-- 安装后可在 **设置 → 通知提醒** 找到配置页。
-- 如果设置页没有立即出现，刷新页面（Ctrl+R）或重启桌面端。
+### 方式 B：直接从 GitHub 安装
 
-插件写入 profile，影响该 profile 的所有会话；禁用/卸载后恢复原生行为。
+无需本地克隆，一条命令：
 
-### 从 Release 安装
+```powershell
+dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
+```
 
-[v0.1.0 Release](https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.0) 附带
-`dsh-desktop-notify-0.1.0.tgz`（由 `pnpm pack` 生成，内容为 `package.json` 中 `files` 列出的文件）。
-如果你的 DSH 版本的 `plugin_manager` 接受本地 tarball 作为安装 spec，可直接安装该 tgz；
-否则解包后按上面的「本地目录」方式安装。tarball 不含 `node_modules`，安装后仍需在解包目录执行 `pnpm install`。
+- 想固定在本次 Release：`dsh plugin --profile web add github:HonestShine/dsh-desktop-notify#v0.1.0`
+- pnpm 会把依赖记录成 `github:HonestShine/dsh-desktop-notify#<commit sha>`；`dsh plugin` 会自动把带 `dsh.bundle` 的包加入该 profile 的 `dsh.profile.bundles`，不需要手工改 `cordis.patch.yml`。
+- 本插件没有构建脚本，git 安装时 pnpm 的 `prepare` 只会安装依赖（`node-notifier`），通常不会触发 `allowBuilds` 提示。
+- 需要 Node.js `^22.22.2 || ^24.15.0 || >=26.0.0`（`node-notifier@12` 的引擎要求，已写入 `package.json` 的 `engines`）。
+
+### 说明
+
+- 上面命令里的 profile 是 `web`（`dsh web` 用的 profile）。桌面端（Electron）的 `desktop` profile 由应用自己管理，CLI 会拒绝 `--profile desktop`，请改用桌面端内置的 `plugin_manager` 安装同一目录或 tarball。
+- 卸载：`dsh plugin --profile web remove dsh-desktop-notify`。
+- 插件写入 profile，影响该 profile 的所有会话；禁用/卸载后恢复原生行为。
+- 首次安装后若设置页没有立即出现，重启 `dsh web` 再 F5 刷新。
 
 ## 使用
 
