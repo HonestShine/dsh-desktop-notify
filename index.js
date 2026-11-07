@@ -13,6 +13,7 @@ import { WinRtNotifier } from './lib/winrt.js'
 const PLUGIN_DIR = fileURLToPath(new URL('.', import.meta.url))
 const ICON_PATH = fileURLToPath(new URL('./icon.svg', import.meta.url))
 const BUNDLED_SOUND = fileURLToPath(new URL('./assets/notify.wav', import.meta.url))
+const BUNDLED_ALERT = fileURLToPath(new URL('./assets/alert.wav', import.meta.url))
 const PLAY_SCRIPT = fileURLToPath(new URL('./assets/play-wav.ps1', import.meta.url))
 
 /** Defer to the in-app approval panel. */
@@ -65,6 +66,16 @@ export default class DesktopNotifyService extends Service {
       ps1Path: PLAY_SCRIPT,
       logger: (message) => this.log(message, 'warn'),
     })
+    // Interaction cue: a different, shorter cue than the notification chime,
+    // played whenever the agent needs an approval or an answer. It never looks
+    // at window focus, because the in-app approval panel gives no audible cue.
+    this.attentionSound = new SoundPlayer({
+      platform: process.platform,
+      bundledFile: BUNDLED_ALERT,
+      ps1Path: PLAY_SCRIPT,
+      logger: (message) => this.log(message, 'warn'),
+    })
+    this.lastCueAt = 0
     /** @type {{ reason: string, actionId?: string, label?: string, at: number, test?: boolean } | undefined} */
     this.lastOutcome = undefined
     /** @type {object | undefined} */
@@ -106,6 +117,10 @@ export default class DesktopNotifyService extends Service {
         systemName: this.config.sound.systemName,
       },
       presence: this.presence.snapshot(),
+      attention: {
+        enabled: this.config.attention.enabled,
+        mode: this.config.attention.mode,
+      },
       windows: {
         appId: this.config.windows.appId,
         resolvedAppId: notifier.appId,
@@ -188,6 +203,18 @@ export default class DesktopNotifyService extends Service {
     return result.ok ? { ok: true } : { ok: false, code: 'sound-failed', message: result.error }
   }
 
+  async previewAttention(mode, file) {
+    const normalized = ['bundled', 'custom', 'none'].includes(mode) ? mode : this.config.attention.mode
+    const check = this.attentionSound.validate(normalized, typeof file === 'string' ? file : '')
+    if (!check.ok) return { ok: false, code: 'invalid-sound', message: check.error }
+    if (normalized === 'none') return { ok: true, silent: true }
+    const result = await this.attentionSound.play(
+      { mode: normalized, file: typeof file === 'string' ? file : '' },
+      { preview: true },
+    )
+    return result.ok ? { ok: true } : { ok: false, code: 'sound-failed', message: result.error }
+  }
+
   /* ------------------------------------------------------------------ */
   /* Listener wiring                                                      */
   /* ------------------------------------------------------------------ */
@@ -199,10 +226,11 @@ export default class DesktopNotifyService extends Service {
       global: true,
     })
     ctx.on('user-questions/request', (request, next) => {
+      const cued = this.#cueAttention()
       if (this.#shouldRemind('question')) {
         try {
           const copy = formatQuestion(request, this.#locale(), this.#sessionTitleOf(request?.agent))
-          void this.#remind(copy)
+          void this.#remind(copy, { sound: !cued })
         } catch (error) {
           this.log(`question reminder failed: ${messageOf(error)}`, 'warn')
         }
@@ -258,7 +286,9 @@ export default class DesktopNotifyService extends Service {
    */
   async #handleApproval(request, next) {
     try {
-      if (!this.config.enabled || !this.config.approval.enabled) return await safeNext(next)
+      if (!this.config.enabled) return await safeNext(next)
+      const cued = this.#cueAttention()
+      if (!this.config.approval.enabled) return await safeNext(next)
       if (this.pendingApproval !== undefined) return await safeNext(next)
       if (this.config.approval.onlyWhenHidden && this.presence.isPresent()) return await safeNext(next)
       const locale = this.#locale()
@@ -277,7 +307,9 @@ export default class DesktopNotifyService extends Service {
       const disposed = Promise.withResolvers()
       pending.cancel = () => disposed.resolve({ kind: 'dispose' })
       this.pendingApproval = pending
-      void this.sound.play(this.config.sound, { preview: false })
+      // The interaction cue already played at the top of the handler; playing
+      // the notification sound too would double-cue the same prompt.
+      if (!cued) void this.sound.play(this.config.sound, { preview: false })
       const shown = this.notifier.show({
         title: copy.title,
         body: copy.body,
@@ -346,13 +378,30 @@ export default class DesktopNotifyService extends Service {
   }
 
   /**
+   * Play the interaction cue when the agent needs the user. Independent of
+   * window focus: an approval or a question must be audible even while the app
+   * is in the foreground, where the in-app panel shows no sound of its own.
+   * @returns {boolean} True when the cue is enabled, so no notification sound should double it.
+   */
+  #cueAttention() {
+    if (!this.config.enabled || !this.config.attention.enabled) return false
+    const now = Date.now()
+    if (now - this.lastCueAt >= 800) {
+      this.lastCueAt = now
+      void this.attentionSound.play(this.config.attention, { preview: false }).catch(() => {})
+    }
+    return true
+  }
+
+  /**
    * Show a non-interactive reminder and play the configured sound.
    * @param {{ title: string, body: string }} copy - Notification copy.
+   * @param {{ sound?: boolean }} [options] - `sound: false` when a cue already played.
    * @returns {Promise<void>}
    */
-  async #remind(copy) {
+  async #remind(copy, options = {}) {
     if (this.disposed) return
-    void this.sound.play(this.config.sound, { preview: false })
+    if (options.sound !== false) void this.sound.play(this.config.sound, { preview: false })
     void this.notifier.show({ title: copy.title, body: copy.body }).catch((error) => {
       this.log(`reminder notification failed: ${messageOf(error)}`, 'warn')
     })
@@ -429,6 +478,13 @@ export default class DesktopNotifyService extends Service {
       // The waterfall may already be unwound.
     }
     this.notifier.clearAll()
+    if (typeof this.notifier.unregisterProtocol === 'function') {
+      void this.notifier.unregisterProtocol().then((result) => {
+        if (result.removed === true) this.log('notification action protocol unregistered')
+      }).catch((error) => {
+        this.log(`notification action protocol unregistration failed: ${messageOf(error)}`, 'warn')
+      })
+    }
     this.presence.dispose()
   }
 }

@@ -71,6 +71,17 @@ window.__ModuleLoader__.load({
       soundFileApply: '应用路径',
       soundFileSaved: '路径已保存',
       soundFileInvalid: '路径无效或格式不受支持',
+      attentionGroup: '交互提示音',
+      attentionEnabled: '权限确认 / 提问时提示',
+      attentionEnabledDesc: '窗口在前台时也会响；与上面的通知铃声分开配置。',
+      attentionMode: '提示音来源',
+      attentionBundled: '内置提示音',
+      attentionCustom: '自定义音频文件',
+      attentionNone: '静音',
+      attentionFile: '自定义提示音路径',
+      attentionFileDesc: '绝对路径。Windows 仅支持 .wav。',
+      attentionFileApply: '应用路径',
+      attentionFilePlaceholder: 'C:\\sounds\\attention.wav',
       systemName: '系统声音名',
       systemNameDesc: '可选。Windows 使用 Notification.*，macOS 使用 Bottle、Ping 等系统声音名。',
       systemNameApply: '应用',
@@ -157,6 +168,17 @@ window.__ModuleLoader__.load({
       soundFileApply: 'Apply path',
       soundFileSaved: 'Path saved',
       soundFileInvalid: 'The path is invalid or the format is unsupported',
+      attentionGroup: 'Input-needed cue',
+      attentionEnabled: 'Cue on approvals and questions',
+      attentionEnabledDesc: 'Plays even while the window is focused; configured separately from the notification sound above.',
+      attentionMode: 'Cue source',
+      attentionBundled: 'Built-in cue',
+      attentionCustom: 'Custom audio file',
+      attentionNone: 'Silent',
+      attentionFile: 'Custom cue path',
+      attentionFileDesc: 'Absolute path. Windows only supports .wav.',
+      attentionFileApply: 'Apply path',
+      attentionFilePlaceholder: 'C:\\sounds\\attention.wav',
       systemName: 'System sound name',
       systemNameDesc: 'Optional. Windows uses Notification.*; macOS uses names such as Bottle or Ping.',
       systemNameApply: 'Apply',
@@ -217,6 +239,10 @@ window.__ModuleLoader__.load({
           previewSound: (mode, file, systemName) => fetchJson(`${BASE}/preview-sound`, {
             method: 'POST',
             body: { mode, file, systemName },
+          }),
+          previewAttention: (mode, file) => fetchJson(`${BASE}/preview-attention`, {
+            method: 'POST',
+            body: { mode, file },
           }),
           openSystemSettings: () => fetchJson(`${BASE}/open-notification-settings`, { method: 'POST', body: {} }),
           repairWindows: () => fetchJson(`${BASE}/repair-windows`, { method: 'POST', body: { confirm: true } }),
@@ -500,6 +526,7 @@ window.__ModuleLoader__.load({
       const approval = value.approval ?? {}
       const events = value.events ?? {}
       const sound = value.sound ?? {}
+      const attention = value.attention ?? {}
       const windows = value.windows ?? {}
       const macos = value.macos ?? {}
       const presence = value.presence ?? {}
@@ -515,6 +542,7 @@ window.__ModuleLoader__.load({
       const [timeoutDraft, setTimeoutDraft] = React.useState(String(approval.timeoutSeconds ?? 30))
       const [fileDraft, setFileDraft] = React.useState(sound.file ?? '')
       const [systemNameDraft, setSystemNameDraft] = React.useState(sound.systemName ?? '')
+      const [attentionFileDraft, setAttentionFileDraft] = React.useState(attention.file ?? '')
       const [appIdDraft, setAppIdDraft] = React.useState(windows.appId ?? '')
       const [macosPathDraft, setMacosPathDraft] = React.useState(macos.customNotifierPath ?? '')
       const [idleDraft, setIdleDraft] = React.useState(String(presence.idleSeconds ?? 180))
@@ -533,6 +561,9 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         setSystemNameDraft(sound.systemName ?? '')
       }, [sound.systemName])
+      React.useEffect(() => {
+        setAttentionFileDraft(attention.file ?? '')
+      }, [attention.file])
       React.useEffect(() => {
         setAppIdDraft(windows.appId ?? '')
       }, [windows.appId])
@@ -615,6 +646,15 @@ window.__ModuleLoader__.load({
           flash(`${t('previewFailed')}: ${error instanceof Error ? error.message : String(error)}`)
         }
       }, [props.previewSound, flash, t])
+
+      const previewAttention = React.useCallback(async (mode, file) => {
+        try {
+          const result = await props.previewAttention(mode, file)
+          flash(result.ok ? t('previewOk') : `${t('previewFailed')}: ${result.message ?? ''}`)
+        } catch (error) {
+          flash(`${t('previewFailed')}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }, [props.previewAttention, flash, t])
 
       const repairWindows = React.useCallback(async () => {
         setWindowsConfirm(false)
@@ -855,6 +895,59 @@ window.__ModuleLoader__.load({
               onClick: () => { void write(['sound', 'systemName'], systemNameDraft.trim()) },
             }, t('systemNameApply')),
           ])),
+        ]),
+        section(t('attentionGroup'), 'attention', [
+          row(t('attentionEnabled'), t('attentionEnabledDesc'), h(Switch, {
+            checked: attention.enabled !== false,
+            disabled: !writable || !enabled,
+            label: t('attentionEnabled'),
+            onChange: (next) => { void write(['attention', 'enabled'], next) },
+          })),
+          row(t('attentionMode'), t('attentionEnabledDesc'), h('div', { className: 'dtn-controls' }, [
+            h('select', {
+              className: 'dtn-select',
+              value: attention.mode ?? 'bundled',
+              disabled: !writable || !enabled,
+              key: 'select',
+              onChange: (event) => {
+                const mode = ['bundled', 'custom', 'none'].includes(event.target.value) ? event.target.value : 'bundled'
+                void write(['attention', 'mode'], mode)
+              },
+            }, [
+              h('option', { value: 'bundled', key: 'bundled' }, t('attentionBundled')),
+              h('option', { value: 'custom', key: 'custom' }, t('attentionCustom')),
+              h('option', { value: 'none', key: 'none' }, t('attentionNone')),
+            ]),
+            h('button', {
+              type: 'button',
+              className: 'dtn-btn',
+              disabled: !writable,
+              key: 'preview',
+              onClick: () => { void previewAttention(attention.mode ?? 'bundled', attention.file ?? '') },
+            }, t('preview')),
+          ])),
+          attention.mode === 'custom'
+            ? row(t('attentionFile'), t('attentionFileDesc'), h('div', { className: 'dtn-controls' }, [
+                h('input', {
+                  type: 'text',
+                  className: 'dtn-input',
+                  style: { width: '300px' },
+                  value: attentionFileDraft,
+                  disabled: !writable || !enabled,
+                  placeholder: t('attentionFilePlaceholder'),
+                  onChange: (event) => setAttentionFileDraft(event.target.value),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Enter') void write(['attention', 'file'], attentionFileDraft.trim())
+                  },
+                }),
+                h('button', {
+                  type: 'button',
+                  className: 'dtn-btn',
+                  disabled: !writable || !enabled,
+                  onClick: () => { void write(['attention', 'file'], attentionFileDraft.trim()) },
+                }, t('attentionFileApply')),
+              ]))
+            : null,
         ]),
         section(t('advancedGroup'), 'advanced', [
           h('div', { className: 'dtn-row', key: 'advanced-toggle' }, [

@@ -15,6 +15,7 @@ DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理
 - **会话标题**：通知正文优先使用会话标题，退回到工作目录名。
 - **铃铛入口**：设置左侧导航的「通知提醒」使用铃铛图标（0.2.2+ 走原生 `settings.section.icon`；0.2.0/0.2.1 走 DOM 补丁，结构变化时静默回落到默认齿轮）。
 - **自定义铃声**：`system` / `bundled` / `custom` / `none` 四种模式，设置页可试听。
+- **交互提示音**：权限确认与提问（含计划征询）触发时播放独立提示音，**与通知铃声分开配置**，且**不受窗口焦点限制**——窗口在前台也响；同样支持 `bundled` / `custom` / `none` 与试听。
 - **可复用服务**：Host 注册 `ctx.desktopNotify`，其他插件可调用 `show()` 弹出带按钮的通知。
 - **Windows 通知身份**：自动读取安装包注册的 `DeepSeek Harness.lnk` 的 AppUserModelID，通知头显示「DeepSeek Harness」和应用图标；解析失败时才回退到手工配置的 AUMID。
 - **Windows 协议修复**：设置页可重新注册 `dshnotify:` 协议，并在确认后打开系统通知设置。
@@ -29,6 +30,7 @@ DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理
 | 系统提示音 | toast `<audio ms-winsoundevent:...>` | 系统声音名（Bottle 等） | `canberra-gtk-play` 尽力而为 |
 | 自定义音频 | **仅 .wav**（SoundPlayer） | `afplay` 支持的格式 | `paplay` / `canberra-gtk-play` / `aplay` |
 | 通知身份 | `DeepSeek Harness`（自动复用安装包快捷方式）+ 应用图标 | terminal-notifier（系统限制） | app-name + 图标 |
+| 交互提示音 | 支持（`SoundPlayer` 播放内置/自定义 .wav） | `afplay` | `paplay` / `canberra-gtk-play` / `aplay` |
 
 > macOS 上通知会显示为 **terminal-notifier**，不是 DeepSeek Harness。这是 node-notifier/terminal-notifier 3 的已知限制（无法设置 sender/图标）。按钮、声音与点击回传均正常。若需要完全品牌化，可自行构建 terminal-notifier（`make icon ICON=... APP_NAME=...`），并在设置页「高级 → macOS 定制 notifier 路径」中填写。
 
@@ -99,7 +101,8 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 ### 说明
 
 - 上面命令里的 profile 是 `web`（`dsh web` 用的 profile）。桌面端（Electron）的 `desktop` profile 由应用自己管理，CLI 会拒绝 `--profile desktop`，请改用桌面端内置的 `plugin_manager` 安装同一目录或 tarball。
-- 卸载：`dsh plugin --profile web remove dsh-desktop-notify`。
+- **通知服务生命周期**：插件加载/启用时注册 `dshnotify:` 协议（注册表 `HKCU\Software\Classes\dshnotify`，带每实例 nonce）；禁用或卸载时自动注销该协议并清理 `%LOCALAPPDATA%\dsh-desktop-notify` 轮询目录。插件重载时旧实例的注销会因 nonce 不匹配而跳过，不会误删新实例的注册。
+- 卸载：`dsh plugin --profile web remove dsh-desktop-notify`（卸载/禁用后协议会自动注销，无需手工清理注册表）。
 - 插件写入 profile，影响该 profile 的所有会话；禁用/卸载后恢复原生行为。
 - 首次安装后若设置页没有立即出现，重启 `dsh web` 再 F5 刷新。
 
@@ -112,7 +115,7 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 3. 系统通知出现「拒绝 / 允许一次」；点击后工具立即继续或被拒。
 4. 如果切回 DSH 窗口，通知会被关闭并改由应用内审批面板处理。
 
-窗口在前台时不会弹通知，直接使用原生面板。
+窗口在前台时不会弹通知，直接使用原生面板；但**交互提示音仍会响**（见下方「铃声」）。
 
 ### 其他提醒
 
@@ -122,12 +125,21 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 
 ### 铃声
 
-在「设置 → 通知提醒 → 通知铃声」选择：
+插件有两类声音，分开配置。
+
+**通知铃声**（任务完成 / 错误提醒 / 带回传按钮的通知）在「设置 → 通知提醒 → 通知铃声」选择：
 
 - **系统提示音**：Windows 使用 `Notification.Default`（可在「通知铃声」分组填写系统声音名覆盖）；macOS 使用 Bottle；Linux 尝试 `canberra-gtk-play`。
 - **内置铃声**：`assets/notify.wav`，原创双音提示音，通过平台播放器播放。
 - **自定义音频文件**：绝对路径。Windows 仅支持 `.wav`；macOS/Linux 取决于系统播放器。
 - **静音**：不播放铃声。
+
+**交互提示音**（权限确认、提问/计划征询等需要你回应的交互）在「交互提示音」分组单独配置：
+
+- 默认播放内置 `assets/alert.wav`（三连上行短音），与通知铃声明显不同；
+- `custom` 可选自定义 `.wav`，`none` 静音；
+- **不受窗口焦点限制**：窗口在前台、显示的是应用内审批面板时也会响（这是与通知铃声的关键区别）；
+- 同一提示 800ms 内只会响一次，避免审批/提问同时到达时叠音；提示音会替代该次交互的通知铃声，不会双响。
 
 「试听」按钮会按当前模式实际播放一次。
 
@@ -148,6 +160,9 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 | `sound.mode` | `bundled` | `system` / `bundled` / `custom` / `none` |
 | `sound.file` | `""` | 自定义音频绝对路径 |
 | `sound.systemName` | `""` | Windows/macOS 系统声音名覆盖 |
+| `attention.enabled` | `true` | 权限确认 / 提问时播放交互提示音（窗口在前台也响） |
+| `attention.mode` | `bundled` | 交互提示音来源：`bundled` / `custom` / `none` |
+| `attention.file` | `""` | 自定义交互提示音的绝对路径 |
 | `windows.appId` | `""` | 可选：手工指定 Windows AppUserModelID；留空自动读取已注册的 `DeepSeek Harness.lnk` |
 | `windows.duration` | `long` | Windows toast 展示时长（`short` / `long`）；Windows 对带按钮的 toast 可能忽略该值 |
 | `macos.customNotifierPath` | `""` | 可选定制 terminal-notifier |
@@ -160,7 +175,7 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 
 1. 打开 **设置 → 系统 → 通知**，确认「通知」总开关与 DeepSeek Harness 的通知都开启，且专注助手/勿扰没有拦截。
 2. 通知头应显示 **DeepSeek Harness** 和应用图标。插件会自动读取开始菜单里 `DeepSeek Harness.lnk` 的 AppUserModelID（安装包已创建）；如果显示成了 AUMID 原文或图标不对，确认该快捷方式存在，或在 **设置 → 通知提醒 → 高级 → Windows 通知身份** 里手工填写 AppUserModelID 覆盖。
-3. 在插件设置页点击「修复通知按钮协议」，重新注册 `dshnotify:`；注册命令位于 `HKCU\Software\Classes\dshnotify`，指向插件的 `assets/activate.vbs`。
+3. 正常情况下插件加载时会自动注册 `dshnotify:`（禁用/卸载时自动注销）；若按钮失效，可在插件设置页点击「修复通知按钮协议」重新注册；注册命令位于 `HKCU\Software\Classes\dshnotify`，指向插件的 `assets/activate.vbs`。
 4. 按钮点击会启动 `wscript.exe` 写一个 JSON 到 `%LOCALAPPDATA%\dsh-desktop-notify\actions`，由 Host 轮询消费。若该目录没有新文件，检查 Windows 是否拦截了 `wscript.exe`，或安全软件是否阻止了自定义协议。
 5. 系统提示音由 toast 的 `<audio ms-winsoundevent:...>` 播放；自定义/内置铃声由 `SoundPlayer` 播放。两者都不响时检查系统通知声音设置。
 
@@ -180,7 +195,7 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 
 ## 架构
 
-- **Host 插件**（`index.js`）：注册 Cordis Service `desktopNotify`；监听 `approval/request`（`prepend + global`）、`user-questions/request`、`agent/status`、`agent/error`；Windows 走 `lib/winrt.js`（WinRT toast + 协议回传 + `assets/resolve-aumid.ps1` 解析通知身份），macOS/Linux 走 `lib/notifier.js`（node-notifier），`lib/sound.js` 播放铃声，`lib/presence.js` 维护多窗口焦点。
+- **Host 插件**（`index.js`）：注册 Cordis Service `desktopNotify`；监听 `approval/request`（`prepend + global`）、`user-questions/request`、`agent/status`、`agent/error`；Windows 走 `lib/winrt.js`（WinRT toast + 协议回传 + `assets/resolve-aumid.ps1` 解析通知身份），macOS/Linux 走 `lib/notifier.js`（node-notifier），`lib/sound.js` 播放通知铃声与交互提示音（两个独立 `SoundPlayer`），`lib/presence.js` 维护多窗口焦点；交互提示音在 `approval/request` 与 `user-questions/request` 到达时播放，不检查焦点。
 - **Client 插件**（`client.js`）：始终上报窗口焦点、空闲时间与 locale；在 `settings.section` 注册配置页，通过 `ctx.configForms.get('desktop-notify')` 读写 Host 配置，通过同源 `/desktop-notify/*` 路由做测试、试听、状态查询与 Windows 协议修复；0.2.2+ 注册原生 `settings.section.icon`，0.2.0/0.2.1 用 DOM 补丁（`data-shortcut-modal="settings"` + 标签 `<span>`），失败时保留外壳默认齿轮。
 - **HTTP 路由**：`/desktop-notify/status|presence|test|preview-sound|open-notification-settings|repair-windows`，全部经过 `ctx.connection.requestRejection(req)` 鉴权，JSON body 上限 16 KiB。
 - **Windows 行动作**：`assets/winrt-toast.ps1` 显示 toast；`<action activationType="protocol" arguments="dshnotify:?token=...&decision=...">` 点击后由 `assets/activate.vbs` 写 rendezvous 文件；Host 每 300ms 轮询并解析，按 token 解析为审批结果。

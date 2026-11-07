@@ -5,6 +5,27 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-11-07
+
+### 新增
+
+- **交互提示音**：权限确认（`approval/request`）与提问/计划征询（`user-questions/request`）触发时播放
+  独立提示音，与通知铃声分开配置（`bundled` / `custom` / `none`，可试听）。它**不检查窗口焦点**，
+  窗口在前台、显示应用内审批面板时也会响；同一提示 800ms 内去重，并替代该次交互的通知铃声避免双响。
+  内置 `assets/alert.wav` 为三连上行短音，与通知铃声（双音钟声）明显不同。
+- 设置页新增「交互提示音」分组；新增 `POST /desktop-notify/preview-attention` 试听接口。
+
+### 变更
+
+- **通知服务生命周期**：插件加载/启用时注册 `dshnotify:` 协议（注册时写入每实例 nonce），
+  禁用或卸载时自动注销协议并清理 `%LOCALAPPDATA%\dsh-desktop-notify` 轮询目录；插件重载时
+  旧实例的注销因 nonce 不匹配而跳过，不会误删新实例的注册。设置页的「修复通知按钮协议」仍保留。
+
+### 修复
+
+- `WinRtNotifier.close()` 现在使用解析后的 AUMID 关闭 toast（此前用配置里的 `windows.appId`，
+  留空自动识别时无法关闭已显示的通知）。
+
 ## [0.1.1] - 2026-11-07
 
 ### 修复
@@ -63,3 +84,4 @@
 
 [0.1.0]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.0
 [0.1.1]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.1
+[0.2.0]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.2.0

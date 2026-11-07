@@ -23,6 +23,7 @@ import {
 import { buildToastXml, escapeXml, isActionToken, normalizeWindowsSound, parseAumidLookup } from '../lib/winrt.js'
 
 const ASSET = fileURLToPath(new URL('../assets/notify.wav', import.meta.url))
+const ALERT_ASSET = fileURLToPath(new URL('../assets/alert.wav', import.meta.url))
 const PS1 = fileURLToPath(new URL('../assets/play-wav.ps1', import.meta.url))
 const ACTIVATE_VBS = fileURLToPath(new URL('../assets/activate.vbs', import.meta.url))
 
@@ -229,6 +230,15 @@ test('validateSoundFile accepts the bundled wav and rejects missing paths', () =
   assert.equal(validateSoundFile('darwin', ASSET).ok, true)
 })
 
+test('both bundled cues are valid RIFF/WAVE files', () => {
+  for (const file of [ASSET, ALERT_ASSET]) {
+    const head = readFileSync(file)
+    assert.equal(head.toString('ascii', 0, 4), 'RIFF')
+    assert.equal(head.toString('ascii', 8, 12), 'WAVE')
+    assert.ok(head.length > 1000)
+  }
+})
+
 test('buildPlayerCandidates follows platform players', () => {
   const windows = buildPlayerCandidates('win32', ASSET, PS1, 'powershell.exe')
   assert.equal(windows[0].command, 'powershell.exe')
@@ -248,6 +258,9 @@ test('normalizeConfig fills defaults and clamps ranges', () => {
   assert.equal(defaults.sound.mode, 'bundled')
   assert.equal(defaults.windows.appId, '')
   assert.equal(defaults.windows.duration, 'long')
+  assert.equal(defaults.attention.enabled, true)
+  assert.equal(defaults.attention.mode, 'bundled')
+  assert.equal(defaults.attention.file, '')
   assert.equal(defaults.presence.staleSeconds, 120)
   assert.equal(defaults.presence.idleSeconds, 180)
 
@@ -255,12 +268,16 @@ test('normalizeConfig fills defaults and clamps ranges', () => {
     enabled: false,
     approval: { timeoutSeconds: 999, onlyWhenHidden: false },
     sound: { mode: 'nope' },
+    attention: { enabled: false, mode: 'nope', file: 7 },
     presence: { staleSeconds: 5, idleSeconds: -3 },
   })
   assert.equal(clamped.enabled, false)
   assert.equal(clamped.approval.timeoutSeconds, 300)
   assert.equal(clamped.approval.onlyWhenHidden, false)
   assert.equal(clamped.sound.mode, 'bundled')
+  assert.equal(clamped.attention.enabled, false)
+  assert.equal(clamped.attention.mode, 'bundled')
+  assert.equal(clamped.attention.file, '')
   assert.equal(clamped.presence.staleSeconds, 30)
   assert.equal(clamped.presence.idleSeconds, 0)
 })

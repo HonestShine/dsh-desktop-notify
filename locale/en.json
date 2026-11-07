@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Desktop Notifications",
-    "description": "Native OS notifications with inline approval buttons and a customizable notification sound."
+    "description": "Native OS notifications with inline approval buttons; approvals and questions play a separate input cue, and notification sounds are customizable."
   }
 }
