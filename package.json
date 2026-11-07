@@ -43,6 +43,7 @@
     "locale",
     "assets",
     "icon.svg",
+    "docs",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

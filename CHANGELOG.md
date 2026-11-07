@@ -5,6 +5,12 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 文档
+
+- README 拆分为英文入口 `README.md` 与中文介绍 `docs/README.zh-CN.md`；介绍文档统一放在 `docs/` 下。
+
 ## [0.1.1] - 2026-11-07
 
 ### 新增

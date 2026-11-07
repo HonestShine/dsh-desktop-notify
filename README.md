@@ -1,252 +1,260 @@
 # dsh-desktop-notify
 
+English | [中文](docs/README.zh-CN.md)
+
 [![Release](https://img.shields.io/github/v/release/HonestShine/dsh-desktop-notify)](https://github.com/HonestShine/dsh-desktop-notify/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理权限请求（拒绝 / 允许一次），并为任务完成、提问与错误提供提醒；通知铃声支持系统提示音、内置铃声、自定义音频与静音。
+Native desktop notifications for DeepSeek Harness: permission requests can be answered directly from the system notification (Reject / Allow once), and turn completion, questions and errors can raise reminders; notification sounds support system sounds, a built-in chime, custom audio and silence.
 
-## 功能
+## Features
 
-- **跨平台原生通知**：Windows（WinRT toast + `dshnotify:` 协议回传）、macOS（terminal-notifier）、Linux（notify-send）。
-- **通知内按钮**：权限确认通知附带「拒绝」「允许一次」，点击后直接把结果交回 Host 的 `approval/request` waterfall。
-- **前台回退**：默认只在窗口不在前台时接管；窗口在前台、用户切回前台或通知超时后，自动退回 DSH 原生审批面板。
-- **其他提醒**：提问、任务完成、会话错误；均可单独开关，并可限制为仅后台提醒。
-- **离开判定**：窗口虽在前台，但超过设定秒数没有键鼠输入也按离开处理（默认 180 秒，0 关闭）。
-- **会话标题**：通知正文优先使用会话标题，退回到工作目录名。
-- **铃铛入口**：设置左侧导航的「通知提醒」使用铃铛图标（0.2.2+ 走原生 `settings.section.icon`；0.2.0/0.2.1 走 DOM 补丁，结构变化时静默回落到默认齿轮）。
-- **自定义铃声**：`system` / `bundled` / `custom` / `none` 四种模式，设置页可试听。
-- **交互提示音**：权限确认与提问（含计划征询）触发时播放独立提示音，**与通知铃声分开配置**，且**不受窗口焦点限制**——窗口在前台也响；同样支持 `bundled` / `custom` / `none` 与试听。
-- **可复用服务**：Host 注册 `ctx.desktopNotify`，其他插件可调用 `show()` 弹出带按钮的通知。
-- **Windows 通知身份**：自动读取安装包注册的 `DeepSeek Harness.lnk` 的 AppUserModelID，通知头显示「DeepSeek Harness」和应用图标；解析失败时才回退到手工配置的 AUMID。
-- **Windows 协议修复**：设置页可重新注册 `dshnotify:` 协议，并在确认后打开系统通知设置。
+- **Cross-platform native notifications**: Windows (WinRT toast + `dshnotify:` protocol callback), macOS (terminal-notifier), Linux (`notify-send`).
+- **Inline notification buttons**: permission notifications carry Reject and Allow once; clicking returns the decision to the Host's `approval/request` waterfall.
+- **Foreground fallback**: by default the plugin takes over only while the window is not focused; when the window is focused, the user returns, or the notification times out, the request falls back to DSH's native approval panel.
+- **Other reminders**: questions, turn completion and session errors; each switchable and optionally limited to the background.
+- **Away detection**: a focused window with no keyboard or pointer input for the configured number of seconds counts as away (default 180 s, 0 disables).
+- **Session titles**: notification bodies prefer the session title and fall back to the working directory name.
+- **Bell entry**: the Notifications settings section uses a bell icon (0.2.2+ uses the native `settings.section.icon`; 0.2.0/0.2.1 use a DOM patch that silently falls back to the default gear if the structure changes).
+- **Custom notification sound**: `system` / `bundled` / `custom` / `none`, previewable in settings.
+- **Interaction cue**: approvals and questions (including plan prompts) play a separate cue, **configured independently from the notification sound** and **regardless of window focus** — it plays even while the window is focused; also supports `bundled` / `custom` / `none` and preview.
+- **Reusable service**: the Host registers `ctx.desktopNotify`; other plugins can call `show()` to display a notification with buttons.
+- **Windows notification identity**: automatically reads the AppUserModelID of the installed `DeepSeek Harness.lnk`, so the toast header shows "DeepSeek Harness" and the application icon; falls back to a manually configured AUMID only when detection fails.
+- **Windows protocol repair**: the settings page can re-register the `dshnotify:` protocol and open the system notification settings after confirmation.
 
-## 平台支持
+## Platform support
 
-| 能力 | Windows | macOS | Linux |
+| Capability | Windows | macOS | Linux |
 |---|---|---|---|
-| 通知显示 | WinRT Toast（PowerShell） | terminal-notifier | `notify-send` |
-| 通知内按钮 | 支持（`dshnotify:` 协议 + VBS） | 支持 | 需要 libnotify 0.7.10+ 且守护进程支持 actions |
-| 点击回传 | VBS 写入 rendezvous JSON | stdout | `notify-send -A` |
-| 系统提示音 | toast `<audio ms-winsoundevent:...>` | 系统声音名（Bottle 等） | `canberra-gtk-play` 尽力而为 |
-| 自定义音频 | **仅 .wav**（SoundPlayer） | `afplay` 支持的格式 | `paplay` / `canberra-gtk-play` / `aplay` |
-| 通知身份 | `DeepSeek Harness`（自动复用安装包快捷方式）+ 应用图标 | terminal-notifier（系统限制） | app-name + 图标 |
-| 交互提示音 | 支持（`SoundPlayer` 播放内置/自定义 .wav） | `afplay` | `paplay` / `canberra-gtk-play` / `aplay` |
+| Notification display | WinRT toast (PowerShell) | terminal-notifier | `notify-send` |
+| Inline buttons | Yes (`dshnotify:` protocol + VBS) | Yes | needs libnotify 0.7.10+ and a daemon with actions |
+| Click callback | VBS writes a rendezvous JSON | stdout | `notify-send -A` |
+| System sound | toast `<audio ms-winsoundevent:...>` | system sound names (Bottle, etc.) | `canberra-gtk-play`, best effort |
+| Custom audio | **WAV only** (`SoundPlayer`) | formats supported by `afplay` | `paplay` / `canberra-gtk-play` / `aplay` |
+| Notification identity | `DeepSeek Harness` (reuses the installer shortcut) + app icon | terminal-notifier (platform limitation) | app-name + icon |
+| Interaction cue | Yes (`SoundPlayer` plays a built-in/custom WAV) | `afplay` | `paplay` / `canberra-gtk-play` / `aplay` |
 
-> macOS 上通知会显示为 **terminal-notifier**，不是 DeepSeek Harness。这是 node-notifier/terminal-notifier 3 的已知限制（无法设置 sender/图标）。按钮、声音与点击回传均正常。若需要完全品牌化，可自行构建 terminal-notifier（`make icon ICON=... APP_NAME=...`），并在设置页「高级 → macOS 定制 notifier 路径」中填写。
+> On macOS notifications appear as **terminal-notifier**, not DeepSeek Harness. This is a known limitation of node-notifier/terminal-notifier 3 (sender/icon cannot be set). Buttons, sounds and click callbacks still work. For full branding you can build your own terminal-notifier (`make icon ICON=... APP_NAME=...`) and set it under Settings → Advanced → macOS custom notifier path.
 
-## DSH 兼容性
+## DSH compatibility
 
-DSH 目前以 RC 形式发布（`0.2.0-rc.x`、`0.2.1-rc.x`、`0.2.2-rc.x`）；本插件按 **0.2.0-rc.2 / 0.2.1-rc.5 / 0.2.2-rc.1** 审计并适配，覆盖 0.2.0/0.2.1/0.2.2 各中间 RC。
+DSH currently ships as release candidates (`0.2.0-rc.x`, `0.2.1-rc.x`, `0.2.2-rc.x`); this plugin was audited and adapted against **0.2.0-rc.2 / 0.2.1-rc.5 / 0.2.2-rc.1**, covering the intermediate RCs of 0.2.0/0.2.1/0.2.2.
 
-| DSH | 设置导航图标 | 配置表单 | 通知/审批 |
+| DSH | Settings nav icon | Config form | Notifications/approvals |
 |---|---|---|---|
-| 0.2.2-rc.1 | 原生 `settings.section.icon` | `configForms` + `volatile` 字段 | 不变 |
-| 0.2.1-rc.5 / 0.2.1-rc.4 | DOM 补丁 | `configForms` + `volatile` 字段 | 不变 |
-| 0.2.0-rc.2 | DOM 补丁 | `configForms` + `volatile` 字段 | 不变 |
+| 0.2.2-rc.1 | native `settings.section.icon` | `configForms` + `volatile` fields | unchanged |
+| 0.2.1-rc.5 / 0.2.1-rc.4 | DOM patch | `configForms` + `volatile` fields | unchanged |
+| 0.2.0-rc.2 | DOM patch | `configForms` + `volatile` fields | unchanged |
 
-适配要点：
+Adaptation notes:
 
-- peer 范围放宽为 `@deepseek-ai/cordis ^4.0.0`、`@deepseek-ai/schemastery ^3.18.0`，兼容 0.2.0 的 cordis `~4.0.4` / schemastery `~3.18.4` 与 0.2.2 的 cordis `~4.1.0` / schemastery `~3.19.0`。
-- 已按三个版本核对 `approval/request` 与结果词表、`user-questions/request`、`agent/status|error|disposed`、`sessionTitle.get`、`connection.requestRejection`、`typertGateway.hasLiveClient`、`configForms.get/mutate/whileServed`、`settings.section` 与 volatile 表单过滤。
-- `displayReason` 在 0.2.x 是 `{ en, zh, ... }` 本地化对象（不是字符串）；插件会按当前界面语言取值。
-- 0.2.2 的 `settings.section.icon` 是新增 slot；0.2.0/0.2.1 没有该 slot，插件自动回落到 DOM 补丁，因此三个版本都能显示铃铛。
-- `configForms` 改为可选注入：如果某个组合不提供它，通知、审批、presence 仍工作，只是不显示设置页。
+- Peer ranges were widened to `@deepseek-ai/cordis ^4.0.0` and `@deepseek-ai/schemastery ^3.18.0`, covering cordis `~4.0.4` / schemastery `~3.18.4` in 0.2.0 and cordis `~4.1.0` / schemastery `~3.19.0` in 0.2.2.
+- `approval/request` and its result vocabulary, `user-questions/request`, `agent/status|error|disposed`, `sessionTitle.get`, `connection.requestRejection`, `typertGateway.hasLiveClient`, `configForms.get/mutate/whileServed`, `settings.section` and volatile form filtering were checked against all three versions.
+- `displayReason` is a localized `{ en, zh, ... }` object in 0.2.x (not a string); the plugin picks the value for the current UI language.
+- 0.2.2 adds the `settings.section.icon` slot; 0.2.0/0.2.1 do not have it, so the plugin falls back to its DOM patch and all three versions show the bell.
+- `configForms` is injected optionally: when a composition does not provide it, notifications, approvals and presence keep working; only the settings page is absent.
 
-## 安装
+## Install
 
-两种方式，任选其一。装完重启 `dsh web`（桌面端则完全退出后重开），再 F5 刷新浏览器，即可在 **设置 → 通知提醒** 看到配置页。
+Two options; pick one. Afterwards restart `dsh web` (or fully quit and reopen the desktop app), then press F5 in the browser; the configuration page appears under **Settings → Notifications**.
 
-### 方式 A：已有本插件的完整资源包（本地目录 / 压缩包）（推荐）
+### Option A: a complete resource bundle (local directory / archive) (recommended)
 
-适用于别人直接发你一个 zip，或你手上已有一份解压好的插件目录（目录里应有 `package.json`、`cordis.patch.yml`、`lib/`、`assets/`、`README.md`）。
+Use this when someone handed you a zip, or you already have an extracted plugin directory (it should contain `package.json`, `cordis.patch.yml`, `lib/`, `assets/`, `README.md`).
 
 ```powershell
-# 1) 解压到一个固定、以后不会移动或删除的目录（不要放临时目录/下载目录）
-#    例：D:\Plugins\dsh-desktop-notify
-#    要安装的是「包含 package.json 的那一层」，不要多套一层同名目录
+# 1) Extract to a stable directory you will not move or delete afterwards
+#    (never a temp/download directory). Example: D:\Plugins\dsh-desktop-notify
+#    Install the layer that contains package.json; do not nest another
+#    same-named directory.
 
-# 2) 确认关键文件都在（缺 assets/ 会导致没图、没声）
+# 2) Make sure the key files are present (missing assets/ means no icon/sound)
 Test-Path "D:\Plugins\dsh-desktop-notify\package.json",
           "D:\Plugins\dsh-desktop-notify\cordis.patch.yml",
           "D:\Plugins\dsh-desktop-notify\lib\winrt.js",
           "D:\Plugins\dsh-desktop-notify\assets\notify.wav"
 
-# 3) 如果之前装过同名插件，先卸载避免版本冲突
+# 3) Remove a previous installation of the same plugin to avoid version conflicts
 dsh plugin --profile web remove dsh-desktop-notify
 
-# 4) 用绝对路径安装（路径含空格要加引号）
+# 4) Install using the absolute path (quote paths that contain spaces)
 dsh plugin --profile web add link:D:\Plugins\dsh-desktop-notify
 ```
 
-说明：
+Notes:
 
-- `link:` 是软链安装：源目录里的文件改了立即生效；但安装后不能移动/重命名该目录，移动了要重新 `add` 一次。
-- 本地目录没有 `node_modules` 时，`link:` 安装前先在插件目录执行 `pnpm install`（macOS/Linux 的 terminal-notifier / notify-send 适配需要 `node-notifier`；Windows 走 WinRT，通常不装也能弹通知）。
-- 想用拷贝安装：`dsh plugin --profile web add file:D:\Plugins\dsh-desktop-notify`（pnpm 会把依赖一起装；此后源目录再改不会同步，需要重新 `add`）。
-- Release 页的 `dsh-desktop-notify-<version>.tgz` 也可以直接装：`dsh plugin --profile web add file:D:\Downloads\dsh-desktop-notify-<version>.tgz`。
+- `link:` is a symlink install: edits in the source directory take effect immediately, but the directory must not be moved or renamed afterwards; if it is, run `add` again.
+- If the local directory has no `node_modules`, run `pnpm install` in it before a `link:` install (macOS/Linux need `node-notifier` for terminal-notifier / notify-send; Windows uses WinRT and usually works without it).
+- To install a copy instead: `dsh plugin --profile web add file:D:\Plugins\dsh-desktop-notify` (pnpm installs dependencies too; later changes in the source directory are not picked up and require another `add`).
+- The `dsh-desktop-notify-<version>.tgz` from the Releases page can also be installed directly: `dsh plugin --profile web add file:D:\Downloads\dsh-desktop-notify-<version>.tgz`.
 
-### 方式 B：直接从 GitHub 安装
+### Option B: install straight from GitHub
 
-无需本地克隆，一条命令：
+No local clone required, one command:
 
 ```powershell
 dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 ```
 
-- 想固定在本次 Release：`dsh plugin --profile web add github:HonestShine/dsh-desktop-notify#v0.1.0`
-- pnpm 会把依赖记录成 `github:HonestShine/dsh-desktop-notify#<commit sha>`；`dsh plugin` 会自动把带 `dsh.bundle` 的包加入该 profile 的 `dsh.profile.bundles`，不需要手工改 `cordis.patch.yml`。
-- 本插件没有构建脚本，git 安装时 pnpm 的 `prepare` 只会安装依赖（`node-notifier`），通常不会触发 `allowBuilds` 提示。
-- 需要 Node.js `^22.22.2 || ^24.15.0 || >=26.0.0`（`node-notifier@12` 的引擎要求，已写入 `package.json` 的 `engines`）。
+- To pin a release: `dsh plugin --profile web add github:HonestShine/dsh-desktop-notify#v0.1.1`
+- pnpm records the dependency as `github:HonestShine/dsh-desktop-notify#<commit sha>`; `dsh plugin` automatically adds packages that declare `dsh.bundle` to the profile's `dsh.profile.bundles`, so `cordis.patch.yml` does not need manual edits.
+- The plugin has no build scripts; pnpm's `prepare` only installs dependencies (`node-notifier`), so the `allowBuilds` prompt normally does not appear.
+- Requires Node.js `^22.22.2 || ^24.15.0 || >=26.0.0` (the `node-notifier@12` engine requirement, declared under `engines` in `package.json`).
 
-### 说明
+### Notes
 
-- 上面命令里的 profile 是 `web`（`dsh web` 用的 profile）。桌面端（Electron）的 `desktop` profile 由应用自己管理，CLI 会拒绝 `--profile desktop`，请改用桌面端内置的 `plugin_manager` 安装同一目录或 tarball。
-- **通知服务生命周期**：插件加载/启用时注册 `dshnotify:` 协议（注册表 `HKCU\Software\Classes\dshnotify`，带每实例 nonce）；禁用或卸载时自动注销该协议并清理 `%LOCALAPPDATA%\dsh-desktop-notify` 轮询目录。插件重载时旧实例的注销会因 nonce 不匹配而跳过，不会误删新实例的注册。
-- 卸载：`dsh plugin --profile web remove dsh-desktop-notify`（卸载/禁用后协议会自动注销，无需手工清理注册表）。
-- 插件写入 profile，影响该 profile 的所有会话；禁用/卸载后恢复原生行为。
-- 首次安装后若设置页没有立即出现，重启 `dsh web` 再 F5 刷新。
+- The commands above use the `web` profile (the one `dsh web` boots). The desktop (Electron) `desktop` profile is managed by the application itself; the CLI rejects `--profile desktop`, so use the app's built-in `plugin_manager` to install the same directory or tarball.
+- **Notification service lifecycle**: on load/enable the plugin registers the `dshnotify:` protocol (registry `HKCU\Software\Classes\dshnotify`, with a per-instance nonce); on disable or uninstall it unregisters the protocol and cleans the `%LOCALAPPDATA%\dsh-desktop-notify` polling directory. A plugin reload skips the unregistration of the old instance (nonce mismatch), so a fresh registration is never deleted.
+- Uninstall: `dsh plugin --profile web remove dsh-desktop-notify` (the protocol is unregistered on disable/uninstall; no manual registry cleanup).
+- The plugin writes into a profile and affects every session in it; disabling/uninstalling restores the native behavior.
+- If the settings page does not appear after the first install, restart `dsh web` and press F5 again.
 
-## 使用
+## Usage
 
-### 权限确认
+### Permission approvals
 
-1. 让窗口失去焦点（切到其他应用或最小化）。
-2. 触发一次需要审批的工具操作。
-3. 系统通知出现「拒绝 / 允许一次」；点击后工具立即继续或被拒。
-4. 如果切回 DSH 窗口，通知会被关闭并改由应用内审批面板处理。
+1. Move focus away from the window (switch to another app or minimize it).
+2. Trigger a tool action that needs approval.
+3. The system notification shows Reject / Allow once; clicking either continues or rejects the tool immediately.
+4. If you switch back to the DSH window, the notification is closed and the in-app approval panel takes over.
 
-窗口在前台时不会弹通知，直接使用原生面板；但**交互提示音仍会响**（见下方「铃声」）。
+While the window is focused no notification appears and the native panel is used; the **interaction cue still plays** (see Sound below).
 
-### 其他提醒
+### Other reminders
 
-- **提问提醒**：Agent 调用 `ask_user_question` 时通知；通知不接管问答，点击正文聚焦应用。
-- **任务完成**：根会话的 `running → idle` 转变触发。
-- **错误提醒**：根会话的 `agent/error` 触发；相同错误 2 秒内去重。
+- **Question reminder**: fires when the agent calls `ask_user_question`; the notification does not take over the Q&A, and clicking the body focuses the app.
+- **Turn completion**: fires on the root session's `running → idle` transition.
+- **Error reminder**: fires on the root session's `agent/error`; identical errors are deduplicated within 2 seconds.
 
-### 铃声
+### Sound
 
-插件有两类声音，分开配置。
+The plugin has two kinds of sound, configured separately.
 
-**通知铃声**（任务完成 / 错误提醒 / 带回传按钮的通知）在「设置 → 通知提醒 → 通知铃声」选择：
+**Notification sound** (turn completion / error reminders / notifications with callback buttons) is selected under Settings → Notifications → Notification sound:
 
-- **系统提示音**：Windows 使用 `Notification.Default`（可在「通知铃声」分组填写系统声音名覆盖）；macOS 使用 Bottle；Linux 尝试 `canberra-gtk-play`。
-- **内置铃声**：`assets/notify.wav`，原创双音提示音，通过平台播放器播放。
-- **自定义音频文件**：绝对路径。Windows 仅支持 `.wav`；macOS/Linux 取决于系统播放器。
-- **静音**：不播放铃声。
+- **System sound**: Windows uses `Notification.Default` (a system sound name can be set in the Notification sound group); macOS uses Bottle; Linux tries `canberra-gtk-play`.
+- **Built-in chime**: `assets/notify.wav`, an original two-tone chime played through the platform player.
+- **Custom audio file**: an absolute path. Windows only supports `.wav`; macOS/Linux depend on the system player.
+- **Silent**: no sound.
 
-**交互提示音**（权限确认、提问/计划征询等需要你回应的交互）在「交互提示音」分组单独配置：
+**Interaction cue** (approvals, questions/plan prompts and other interactions that need your reply) is configured separately in the Interaction cue group:
 
-- 默认播放内置 `assets/alert.wav`（三连上行短音），与通知铃声明显不同；
-- `custom` 可选自定义 `.wav`，`none` 静音；
-- **不受窗口焦点限制**：窗口在前台、显示的是应用内审批面板时也会响（这是与通知铃声的关键区别）；
-- 同一提示 800ms 内只会响一次，避免审批/提问同时到达时叠音；Windows 上会同时静音该次交互 toast 的自带提示音，避免双响。
+- By default plays the built-in `assets/alert.wav` (three rising short notes), clearly different from the notification chime;
+- `custom` accepts a custom `.wav`; `none` silences it;
+- **Not limited by window focus**: it also plays while the window is focused and the in-app approval panel is shown (the key difference from the notification sound);
+- The same prompt rings at most once per 800 ms, so an approval and a question arriving together do not stack; on Windows the interaction toast is muted at the same time to avoid a double sound.
 
-「试听」按钮会按当前模式实际播放一次。
+The Preview button plays the current mode once.
 
-## 配置项
+## Configuration
 
-配置文件位于 profile 的 `cordis.patch.yml`（设置页写入），entry id 为 `desktop-notify`：
+The configuration lives in the profile's `cordis.patch.yml` (written by the settings page), with entry id `desktop-notify`:
 
-| 字段 | 默认值 | 说明 |
+| Field | Default | Description |
 |---|---|---|
-| `enabled` | `true` | 插件总开关 |
-| `approval.enabled` | `true` | 接管权限确认通知 |
-| `approval.onlyWhenHidden` | `true` | 仅窗口不在前台时接管 |
-| `approval.timeoutSeconds` | `30` | 通知等待上限（5–300） |
-| `events.question` | `true` | 提问提醒 |
-| `events.turnEnd` | `true` | 任务完成提醒 |
-| `events.errors` | `true` | 错误提醒 |
-| `events.onlyWhenHidden` | `true` | 三类提醒仅后台 |
+| `enabled` | `true` | Plugin master switch |
+| `approval.enabled` | `true` | Take over permission approval notifications |
+| `approval.onlyWhenHidden` | `true` | Take over only while the window is not focused |
+| `approval.timeoutSeconds` | `30` | Notification wait limit (5–300) |
+| `events.question` | `true` | Question reminder |
+| `events.turnEnd` | `true` | Turn-completion reminder |
+| `events.errors` | `true` | Error reminder |
+| `events.onlyWhenHidden` | `true` | Reminders only in the background |
 | `sound.mode` | `bundled` | `system` / `bundled` / `custom` / `none` |
-| `sound.file` | `""` | 自定义音频绝对路径 |
-| `sound.systemName` | `""` | Windows/macOS 系统声音名覆盖 |
-| `attention.enabled` | `true` | 权限确认 / 提问时播放交互提示音（窗口在前台也响） |
-| `attention.mode` | `bundled` | 交互提示音来源：`bundled` / `custom` / `none` |
-| `attention.file` | `""` | 自定义交互提示音的绝对路径 |
-| `windows.appId` | `""` | 可选：手工指定 Windows AppUserModelID；留空自动读取已注册的 `DeepSeek Harness.lnk` |
-| `windows.duration` | `long` | Windows toast 展示时长（`short` / `long`）；Windows 对带按钮的 toast 可能忽略该值 |
-| `macos.customNotifierPath` | `""` | 可选定制 terminal-notifier |
-| `presence.staleSeconds` | `120` | 客户端在场状态过期时间 |
-| `presence.idleSeconds` | `180` | 前台但无输入超过该秒数按离开处理；0 关闭 |
+| `sound.file` | `""` | Absolute path to custom audio |
+| `sound.systemName` | `""` | Windows/macOS system sound name override |
+| `attention.enabled` | `true` | Play the interaction cue on approvals/questions (also while focused) |
+| `attention.mode` | `bundled` | Interaction cue source: `bundled` / `custom` / `none` |
+| `attention.file` | `""` | Absolute path to a custom interaction cue |
+| `windows.appId` | `""` | Optional manual Windows AppUserModelID; empty auto-reads the registered `DeepSeek Harness.lnk` |
+| `windows.duration` | `long` | Windows toast display time (`short` / `long`); Windows may ignore it for toasts with buttons |
+| `macos.customNotifierPath` | `""` | Optional custom terminal-notifier |
+| `presence.staleSeconds` | `120` | Presence report expiry |
+| `presence.idleSeconds` | `180` | Treat a focused window without input as away after this many seconds; 0 disables |
 
-## 故障排查
+## Troubleshooting
 
-### Windows 通知不出现或按钮无反应
+### Windows notifications missing or buttons unresponsive
 
-1. 打开 **设置 → 系统 → 通知**，确认「通知」总开关与 DeepSeek Harness 的通知都开启，且专注助手/勿扰没有拦截。
-2. 通知头应显示 **DeepSeek Harness** 和应用图标。插件会自动读取开始菜单里 `DeepSeek Harness.lnk` 的 AppUserModelID（安装包已创建）；如果显示成了 AUMID 原文或图标不对，确认该快捷方式存在，或在 **设置 → 通知提醒 → 高级 → Windows 通知身份** 里手工填写 AppUserModelID 覆盖。
-3. 正常情况下插件加载时会自动注册 `dshnotify:`（禁用/卸载时自动注销）；若按钮失效，可在插件设置页点击「修复通知按钮协议」重新注册；注册命令位于 `HKCU\Software\Classes\dshnotify`，指向插件的 `assets/activate.vbs`。
-4. 按钮点击会启动 `wscript.exe` 写一个 JSON 到 `%LOCALAPPDATA%\dsh-desktop-notify\actions`，由 Host 轮询消费。若该目录没有新文件，检查 Windows 是否拦截了 `wscript.exe`，或安全软件是否阻止了自定义协议。
-5. 系统提示音由 toast 的 `<audio ms-winsoundevent:...>` 播放；自定义/内置铃声由 `SoundPlayer` 播放。两者都不响时检查系统通知声音设置。
+1. Open **Settings → System → Notifications** and make sure both the notification master switch and DeepSeek Harness notifications are on, and that Focus assist / Do not disturb is not blocking them.
+2. The notification header should show **DeepSeek Harness** and the app icon. The plugin automatically reads the AppUserModelID of `DeepSeek Harness.lnk` in the Start Menu (created by the installer); if it shows the raw AUMID or the wrong icon, verify that shortcut exists, or set an AppUserModelID override under **Settings → Notifications → Advanced → Windows notification identity**.
+3. Normally the plugin registers `dshnotify:` on load (and unregisters it on disable/uninstall); if buttons stop working, use "Repair notification button protocol" in the plugin settings to re-register. The registration lives under `HKCU\Software\Classes\dshnotify` and points at the plugin's `assets/activate.vbs`.
+4. Clicking a button starts `wscript.exe`, which writes a JSON file into `%LOCALAPPDATA%\dsh-desktop-notify\actions`; the Host polls that directory. If no new file appears, check whether Windows blocks `wscript.exe` or security software blocks the custom protocol.
+5. System sounds are played by the toast's `<audio ms-winsoundevent:...>`; built-in/custom sounds are played by `SoundPlayer`. If neither plays, check the system notification sound settings.
 
-> Windows 的按钮回传依赖 Host 进程存活；应用退出后，历史通知中的按钮不会再被处理。协议注册写在当前用户注册表，不需要管理员权限。
+> Windows button callbacks depend on the Host process being alive; after the app quits, buttons in historical notifications are no longer processed. The protocol registration is written to the current-user registry and needs no administrator rights.
 
 ### macOS
 
-- 首次通知会请求系统权限；在 **系统设置 → 通知 → terminal-notifier** 中允许。
-- 通知身份是 terminal-notifier（见上）。
-- 自定义 notifier 路径必须是可执行的 terminal-notifier。
+- The first notification asks for system permission; allow it under **System Settings → Notifications → terminal-notifier**.
+- The notification identity is terminal-notifier (see above).
+- A custom notifier path must point to an executable terminal-notifier.
 
 ### Linux
 
-- 需要 `notify-send`（`libnotify-bin`）与支持 actions 的守护进程；`notify-send --version` ≥ 0.7.10 才支持按钮。
-- 无动作支持时，插件会退回应用内审批面板；状态页会标明。
-- 自定义声音需要 `paplay`、`canberra-gtk-play` 或 `aplay` 中至少一个。
+- Requires `notify-send` (`libnotify-bin`) and a notification daemon with action support; buttons need `notify-send --version` ≥ 0.7.10.
+- Without action support the plugin falls back to the in-app approval panel; the status page says so.
+- A custom sound needs at least one of `paplay`, `canberra-gtk-play` or `aplay`.
 
-## 架构
+## Architecture
 
-- **Host 插件**（`index.js`）：注册 Cordis Service `desktopNotify`；监听 `approval/request`（`prepend + global`）、`user-questions/request`、`agent/status`、`agent/error`；Windows 走 `lib/winrt.js`（WinRT toast + 协议回传 + `assets/resolve-aumid.ps1` 解析通知身份），macOS/Linux 走 `lib/notifier.js`（node-notifier），`lib/sound.js` 播放通知铃声与交互提示音（两个独立 `SoundPlayer`），`lib/presence.js` 维护多窗口焦点；交互提示音在 `approval/request` 与 `user-questions/request` 到达时播放，不检查焦点。
-- **Client 插件**（`client.js`）：始终上报窗口焦点、空闲时间与 locale；在 `settings.section` 注册配置页，通过 `ctx.configForms.get('desktop-notify')` 读写 Host 配置，通过同源 `/desktop-notify/*` 路由做测试、试听、状态查询与 Windows 协议修复；0.2.2+ 注册原生 `settings.section.icon`，0.2.0/0.2.1 用 DOM 补丁（`data-shortcut-modal="settings"` + 标签 `<span>`），失败时保留外壳默认齿轮。
-- **HTTP 路由**：`/desktop-notify/status|presence|test|preview-sound|open-notification-settings|repair-windows`，全部经过 `ctx.connection.requestRejection(req)` 鉴权，JSON body 上限 16 KiB。
-- **Windows 行动作**：`assets/winrt-toast.ps1` 显示 toast；`<action activationType="protocol" arguments="dshnotify:?token=...&decision=...">` 点击后由 `assets/activate.vbs` 写 rendezvous 文件；Host 每 300ms 轮询并解析，按 token 解析为审批结果。
-- **审批协同**：只有存在活跃 Client 时才把未决审批委托回原生面板；无 Client 时依赖通知按钮完成，硬上限 2 分钟后以 `unavailable` 关闭。
-- **无 DSH 核心改动**：不修改 `app.asar`、Electron main/preload，不新增 IPC。
+- **Host plugin** (`index.js`): registers the Cordis Service `desktopNotify`; listens for `approval/request` (`prepend + global`), `user-questions/request`, `agent/status` and `agent/error`; Windows uses `lib/winrt.js` (WinRT toast + protocol callback + `assets/resolve-aumid.ps1` for the notification identity), macOS/Linux use `lib/notifier.js` (node-notifier); `lib/sound.js` plays the notification sound and the interaction cue (two independent `SoundPlayer` instances); `lib/presence.js` tracks multi-window focus. The interaction cue plays when `approval/request` and `user-questions/request` arrive, without checking focus.
+- **Client plugin** (`client.js`): always reports window focus, idle time and locale; registers the settings page under `settings.section`, reads and writes Host configuration through `ctx.configForms.get('desktop-notify')`, and uses same-origin `/desktop-notify/*` routes for testing, preview, status and Windows protocol repair. 0.2.2+ registers the native `settings.section.icon`; 0.2.0/0.2.1 use a DOM patch (`data-shortcut-modal="settings"` + a label `<span>`) and keep the shell's default gear if it fails.
+- **HTTP routes**: `/desktop-notify/status|presence|test|preview-sound|preview-attention|open-notification-settings|repair-windows`, all gated by `ctx.connection.requestRejection(req)`, JSON body limited to 16 KiB.
+- **Windows action flow**: `assets/winrt-toast.ps1` shows the toast; clicking `<action activationType="protocol" arguments="dshnotify:?token=...&decision=...">` makes `assets/activate.vbs` write a rendezvous file; the Host polls every 300 ms and resolves the approval by token.
+- **Approval coordination**: pending approvals are delegated back to the native panel only while an active Client exists; without a Client the notification buttons are required, with a hard 2-minute cap that closes them as `unavailable`.
+- **No DSH core changes**: `app.asar`, Electron main/preload are untouched and no IPC is added.
 
-## 开发
+## Development
 
 ```powershell
 pnpm install
 node --check index.js
 node --check client.js
-node test/unit.test.js          # node:test 直接运行（沙箱下不要用 --test spawn）
-node scripts/winrt-probe.mjs 300   # Windows：真实 WinRT toast + 协议按钮回传
-node scripts/notify-probe.mjs 300  # macOS/Linux：node-notifier 探针
-node scripts/make-chime.mjs        # 重新生成 assets/notify.wav
+node test/unit.test.js          # run node:test directly (do not use --test spawn under a sandbox)
+node scripts/winrt-probe.mjs 300   # Windows: real WinRT toast + protocol button callback
+node scripts/notify-probe.mjs 300  # macOS/Linux: node-notifier probe
+node scripts/make-chime.mjs        # regenerate assets/notify.wav and assets/alert.wav
 ```
 
-> 两个探针都会等待用户点击按钮；在 DSH 受限沙箱下，子进程/命名管道可能被拦截，需在普通终端或提权沙箱中运行。实际运行时 Host 进程不受该沙箱限制。运行 `winrt-probe.mjs` 前请先禁用插件，避免插件的 watcher 抢先消费回传文件。
+> Both probes wait for you to click a button; under the restricted DSH sandbox child processes / named pipes may be blocked, so run them in a normal terminal or an elevated sandbox. The Host process is not affected by that sandbox at runtime. Disable the plugin before running `winrt-probe.mjs` so its watcher does not consume the callback file first.
 
-## 灵感来源
+## Inspiration
 
-设置页的铃铛图标、空闲离开判定、会话标题正文等交互参考了开源项目 [dsh-notify-me](https://github.com/chromoany/dsh-notify-me)（MIT）。本项目只借鉴交互与实现思路，代码为独立实现；两者的定位不同：
+The bell icon, idle-away detection and session-title body are interactions inspired by the open-source project [dsh-notify-me](https://github.com/chromoany/dsh-notify-me) (MIT). This project borrows interaction and implementation ideas only; the code is an independent implementation, and the two have different positioning:
 
-- dsh-notify-me 以浏览器层为主，桌面端审批通知不带按钮；本插件把审批与通知都放在 Host 层，Windows 通知直接带「拒绝 / 允许一次」并由自定义协议回传。
-- 尚未纳入、但值得后续考虑的能力：按会话静音、外部推送（Discord / Bark / Gotify / 飞书 / Server酱 / WxPusher / Webhook）、页面关闭后的宿主兜底、通知标题标记（🔔 / ✅）。
-- 设置导航图标：0.2.2+ 走原生 `settings.section.icon`；0.2.0/0.2.1 只能做 DOM 补丁，宿主结构变化时回落到默认齿轮。
+- dsh-notify-me is mostly browser-layer and its desktop approval notifications carry no buttons; this plugin keeps both approvals and notifications in the Host, so Windows notifications carry Reject / Allow once and return the result through a custom protocol.
+- Not yet included but worth considering: per-session mute, external push (Discord / Bark / Gotify / Feishu / ServerChan / WxPusher / Webhook), host-side fallback when the page is closed, notification title markers (🔔 / ✅).
+- Navigation icon: 0.2.2+ uses the native `settings.section.icon`; 0.2.0/0.2.1 can only use a DOM patch and fall back to the default gear if the host structure changes.
 
-## 已知限制
+## Known limitations
 
-- macOS 通知身份无法显示为 DeepSeek Harness（第三方 notifier 限制）。
-- Windows 使用 WinRT + 自定义协议；首次注册会写 `HKCU\Software\Classes\dshnotify`。若安全软件禁止 `wscript.exe`，按钮回传不可用。
-- Windows 自定义音频只支持 WAV；系统声音名必须以 `Notification.` 开头。
-- 动作标签会被清洗（去除 `,`/`;`、开头 `-`，上限 24 字符）；动作 id 只保留字母、数字、`_`、`-`；最多 3 个按钮。
-- 多个审批同时到达时只接管一个，其余交给应用内面板。
-- 设置导航的铃铛图标：0.2.2+ 使用原生 slot；0.2.0/0.2.1 是 DOM 补丁，DSH 改设置面板结构后会静默回落到默认齿轮，不影响通知功能。
-- 空闲判定从页面加载时开始计时；页面刚加载、人已经离开的情况下，第一次提醒最多会晚一个阈值（默认 180 秒）。
-- 设置变更会触发 Host 插件重新加载；正在进行中的通知会关闭，未决审批会委托回面板。
-- 无通知中心/历史；关闭应用后不会补发。
+- macOS notifications cannot be branded as DeepSeek Harness (third-party notifier limitation).
+- Windows uses WinRT plus a custom protocol; the first registration writes `HKCU\Software\Classes\dshnotify`. If security software blocks `wscript.exe`, button callbacks are unavailable.
+- Windows custom audio only supports WAV; system sound names must start with `Notification.`.
+- Action labels are sanitized (`,`, `;` and a leading `-` are removed; max 24 characters); action ids keep only letters, digits, `_` and `-`; at most 3 buttons.
+- Concurrent approvals: only one is taken over; the rest go to the in-app panel.
+- Bell icon: 0.2.2+ uses the native slot; 0.2.0/0.2.1 use a DOM patch and silently fall back to the default gear if DSH changes the settings structure; notifications are unaffected.
+- Idle detection starts when the page loads; if the page just loaded and the user is already away, the first reminder can be up to one threshold (default 180 s) late.
+- Configuration changes reload the Host plugin; in-flight notifications are closed and pending approvals are delegated back to the panel.
+- No notification center/history; nothing is re-sent after the app quits.
 
-## 版本与发布
+## Versioning & releases
 
-- 版本历史见 [CHANGELOG.md](CHANGELOG.md)。
-- 发布包：GitHub Releases（`v0.1.0` 起）；插件未发布到 npm，`package.json` 中保留 `"private": true` 以防误发布。
+- Version history: [CHANGELOG.md](CHANGELOG.md).
+- Releases: GitHub Releases (since `v0.1.0`); the plugin is not published to npm and keeps `"private": true` to prevent accidental publishing.
 
-## 许可证
+## Documentation
 
-插件代码 MIT。运行时依赖：
+- English introduction: this file (`README.md`).
+- Chinese introduction: [docs/README.zh-CN.md](docs/README.zh-CN.md).
+
+## License
+
+Plugin code is MIT. Runtime dependencies:
 
 - [node-notifier](https://github.com/mikaelbr/node-notifier) — MIT
-- SnoreToast（node-notifier 内置）— LGPL-3
-- terminal-notifier（node-notifier 内置）— MIT
+- SnoreToast (bundled with node-notifier) — LGPL-3
+- terminal-notifier (bundled with node-notifier) — MIT
 
-`assets/notify.wav` 由 `scripts/make-chime.mjs` 合成，无第三方音频版权。
+`assets/notify.wav` and `assets/alert.wav` are synthesized by `scripts/make-chime.mjs`; no third-party audio copyright applies.
