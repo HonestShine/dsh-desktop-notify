@@ -20,7 +20,7 @@ import {
   toastSoundOptions,
   validateSoundFile,
 } from '../lib/sound.js'
-import { buildToastXml, escapeXml, isActionToken, normalizeWindowsSound } from '../lib/winrt.js'
+import { buildToastXml, escapeXml, isActionToken, normalizeWindowsSound, parseAumidLookup } from '../lib/winrt.js'
 
 const ASSET = fileURLToPath(new URL('../assets/notify.wav', import.meta.url))
 const PS1 = fileURLToPath(new URL('../assets/play-wav.ps1', import.meta.url))
@@ -98,6 +98,34 @@ test('buildToastXml applies the configured duration', () => {
     soundMode: 'none',
   })
   assert.match(short, /^<toast duration="short"/u)
+})
+
+test('buildToastXml carries the app logo override when one is resolved', () => {
+  const xml = buildToastXml({
+    title: 'T',
+    body: '',
+    actions: [],
+    token: 't',
+    appLogo: 'file:///C:/Program%20Files/App/resources/icon.png',
+    soundMode: 'none',
+  })
+  assert.ok(xml.includes('placement="appLogoOverride"'))
+  assert.ok(xml.includes('src="file:///C:/Program%20Files/App/resources/icon.png"'))
+  assert.ok(xml.includes('hint-crop="circle"'))
+  const plain = buildToastXml({ title: 'T', body: '', actions: [], token: 't', soundMode: 'none' })
+  assert.equal(plain.includes('appLogoOverride'), false)
+})
+
+test('parseAumidLookup reads the shortcut lookup result', () => {
+  const parsed = parseAumidLookup('{"aumid":"electron.app.DeepSeek Harness","shortcut":"C:\\\\x.lnk","target":"C:\\\\app.exe"}')
+  assert.deepEqual(parsed, {
+    appId: 'electron.app.DeepSeek Harness',
+    shortcut: 'C:\\x.lnk',
+    target: 'C:\\app.exe',
+  })
+  assert.equal(parseAumidLookup('{}'), undefined)
+  assert.equal(parseAumidLookup('not json'), undefined)
+  assert.equal(parseAumidLookup('{"aumid":"   "}'), undefined)
 })
 
 test('isActionToken accepts only the UUID tokens this transport mints', () => {
@@ -218,7 +246,8 @@ test('normalizeConfig fills defaults and clamps ranges', () => {
   assert.equal(defaults.enabled, true)
   assert.equal(defaults.approval.timeoutSeconds, 30)
   assert.equal(defaults.sound.mode, 'bundled')
-  assert.equal(defaults.windows.appId, 'com.deepseek.dsh')
+  assert.equal(defaults.windows.appId, '')
+  assert.equal(defaults.windows.duration, 'long')
   assert.equal(defaults.presence.staleSeconds, 120)
   assert.equal(defaults.presence.idleSeconds, 180)
 

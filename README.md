@@ -16,6 +16,7 @@ DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理
 - **铃铛入口**：设置左侧导航的「通知提醒」使用铃铛图标（0.2.2+ 走原生 `settings.section.icon`；0.2.0/0.2.1 走 DOM 补丁，结构变化时静默回落到默认齿轮）。
 - **自定义铃声**：`system` / `bundled` / `custom` / `none` 四种模式，设置页可试听。
 - **可复用服务**：Host 注册 `ctx.desktopNotify`，其他插件可调用 `show()` 弹出带按钮的通知。
+- **Windows 通知身份**：自动读取安装包注册的 `DeepSeek Harness.lnk` 的 AppUserModelID，通知头显示「DeepSeek Harness」和应用图标；解析失败时才回退到手工配置的 AUMID。
 - **Windows 协议修复**：设置页可重新注册 `dshnotify:` 协议，并在确认后打开系统通知设置。
 
 ## 平台支持
@@ -27,7 +28,7 @@ DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理
 | 点击回传 | VBS 写入 rendezvous JSON | stdout | `notify-send -A` |
 | 系统提示音 | toast `<audio ms-winsoundevent:...>` | 系统声音名（Bottle 等） | `canberra-gtk-play` 尽力而为 |
 | 自定义音频 | **仅 .wav**（SoundPlayer） | `afplay` 支持的格式 | `paplay` / `canberra-gtk-play` / `aplay` |
-| 通知身份 | `com.deepseek.dsh`（安装包快捷方式） | terminal-notifier（系统限制） | app-name + 图标 |
+| 通知身份 | `DeepSeek Harness`（自动复用安装包快捷方式）+ 应用图标 | terminal-notifier（系统限制） | app-name + 图标 |
 
 > macOS 上通知会显示为 **terminal-notifier**，不是 DeepSeek Harness。这是 node-notifier/terminal-notifier 3 的已知限制（无法设置 sender/图标）。按钮、声音与点击回传均正常。若需要完全品牌化，可自行构建 terminal-notifier（`make icon ICON=... APP_NAME=...`），并在设置页「高级 → macOS 定制 notifier 路径」中填写。
 
@@ -80,7 +81,7 @@ dsh plugin --profile web add link:D:\Plugins\dsh-desktop-notify
 - `link:` 是软链安装：源目录里的文件改了立即生效；但安装后不能移动/重命名该目录，移动了要重新 `add` 一次。
 - 本地目录没有 `node_modules` 时，`link:` 安装前先在插件目录执行 `pnpm install`（macOS/Linux 的 terminal-notifier / notify-send 适配需要 `node-notifier`；Windows 走 WinRT，通常不装也能弹通知）。
 - 想用拷贝安装：`dsh plugin --profile web add file:D:\Plugins\dsh-desktop-notify`（pnpm 会把依赖一起装；此后源目录再改不会同步，需要重新 `add`）。
-- Release 里的 `dsh-desktop-notify-0.1.0.tgz` 也可以直接装：`dsh plugin --profile web add file:D:\Downloads\dsh-desktop-notify-0.1.0.tgz`。
+- Release 页的 `dsh-desktop-notify-<version>.tgz` 也可以直接装：`dsh plugin --profile web add file:D:\Downloads\dsh-desktop-notify-<version>.tgz`。
 
 ### 方式 B：直接从 GitHub 安装
 
@@ -147,7 +148,7 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 | `sound.mode` | `bundled` | `system` / `bundled` / `custom` / `none` |
 | `sound.file` | `""` | 自定义音频绝对路径 |
 | `sound.systemName` | `""` | Windows/macOS 系统声音名覆盖 |
-| `windows.appId` | `com.deepseek.dsh` | Windows AppUserModelID |
+| `windows.appId` | `""` | 可选：手工指定 Windows AppUserModelID；留空自动读取已注册的 `DeepSeek Harness.lnk` |
 | `windows.duration` | `long` | Windows toast 展示时长（`short` / `long`）；Windows 对带按钮的 toast 可能忽略该值 |
 | `macos.customNotifierPath` | `""` | 可选定制 terminal-notifier |
 | `presence.staleSeconds` | `120` | 客户端在场状态过期时间 |
@@ -158,7 +159,7 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 ### Windows 通知不出现或按钮无反应
 
 1. 打开 **设置 → 系统 → 通知**，确认「通知」总开关与 DeepSeek Harness 的通知都开启，且专注助手/勿扰没有拦截。
-2. 确认 Start Menu 中存在 `DeepSeek Harness.lnk` 且其 AppUserModelID 为 `com.deepseek.dsh`（安装包应已创建）。
+2. 通知头应显示 **DeepSeek Harness** 和应用图标。插件会自动读取开始菜单里 `DeepSeek Harness.lnk` 的 AppUserModelID（安装包已创建）；如果显示成了 AUMID 原文或图标不对，确认该快捷方式存在，或在 **设置 → 通知提醒 → 高级 → Windows 通知身份** 里手工填写 AppUserModelID 覆盖。
 3. 在插件设置页点击「修复通知按钮协议」，重新注册 `dshnotify:`；注册命令位于 `HKCU\Software\Classes\dshnotify`，指向插件的 `assets/activate.vbs`。
 4. 按钮点击会启动 `wscript.exe` 写一个 JSON 到 `%LOCALAPPDATA%\dsh-desktop-notify\actions`，由 Host 轮询消费。若该目录没有新文件，检查 Windows 是否拦截了 `wscript.exe`，或安全软件是否阻止了自定义协议。
 5. 系统提示音由 toast 的 `<audio ms-winsoundevent:...>` 播放；自定义/内置铃声由 `SoundPlayer` 播放。两者都不响时检查系统通知声音设置。
@@ -179,7 +180,7 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 
 ## 架构
 
-- **Host 插件**（`index.js`）：注册 Cordis Service `desktopNotify`；监听 `approval/request`（`prepend + global`）、`user-questions/request`、`agent/status`、`agent/error`；Windows 走 `lib/winrt.js`（WinRT toast + 协议回传），macOS/Linux 走 `lib/notifier.js`（node-notifier），`lib/sound.js` 播放铃声，`lib/presence.js` 维护多窗口焦点。
+- **Host 插件**（`index.js`）：注册 Cordis Service `desktopNotify`；监听 `approval/request`（`prepend + global`）、`user-questions/request`、`agent/status`、`agent/error`；Windows 走 `lib/winrt.js`（WinRT toast + 协议回传 + `assets/resolve-aumid.ps1` 解析通知身份），macOS/Linux 走 `lib/notifier.js`（node-notifier），`lib/sound.js` 播放铃声，`lib/presence.js` 维护多窗口焦点。
 - **Client 插件**（`client.js`）：始终上报窗口焦点、空闲时间与 locale；在 `settings.section` 注册配置页，通过 `ctx.configForms.get('desktop-notify')` 读写 Host 配置，通过同源 `/desktop-notify/*` 路由做测试、试听、状态查询与 Windows 协议修复；0.2.2+ 注册原生 `settings.section.icon`，0.2.0/0.2.1 用 DOM 补丁（`data-shortcut-modal="settings"` + 标签 `<span>`），失败时保留外壳默认齿轮。
 - **HTTP 路由**：`/desktop-notify/status|presence|test|preview-sound|open-notification-settings|repair-windows`，全部经过 `ctx.connection.requestRejection(req)` 鉴权，JSON body 上限 16 KiB。
 - **Windows 行动作**：`assets/winrt-toast.ps1` 显示 toast；`<action activationType="protocol" arguments="dshnotify:?token=...&decision=...">` 点击后由 `assets/activate.vbs` 写 rendezvous 文件；Host 每 300ms 轮询并解析，按 token 解析为审批结果。

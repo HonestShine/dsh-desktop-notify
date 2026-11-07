@@ -108,6 +108,9 @@ export default class DesktopNotifyService extends Service {
       presence: this.presence.snapshot(),
       windows: {
         appId: this.config.windows.appId,
+        resolvedAppId: notifier.appId,
+        appIdSource: notifier.appIdSource,
+        appLogo: notifier.appLogo === true,
         canRepairProtocol: process.platform === 'win32',
       },
       macos: {

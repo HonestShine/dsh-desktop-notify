@@ -5,7 +5,15 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.1.1] - 2026-11-07
+
+### 修复
+
+- **Windows 通知身份**：通知头此前显示 AUMID 原文（`com.deepseek.dsh`）和默认图标，而不是应用名与图标。
+  现在 `assets/resolve-aumid.ps1` 会读取开始菜单里已注册的 `DeepSeek Harness.lnk` 的 AppUserModelID，
+  通知头显示 **DeepSeek Harness**；toast XML 同时带上安装目录 `resources/icon.png` 作为
+  `appLogoOverride`，确保通知内显示鲸鱼图标。`windows.appId` 默认改为留空（自动识别），仅在自动
+  识别失败时需要手工覆盖。
 
 ### 文档
 
@@ -54,3 +62,4 @@
 - 关闭应用后不会补发通知。
 
 [0.1.0]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.0
+[0.1.1]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.1

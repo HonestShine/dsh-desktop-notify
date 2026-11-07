@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop-notify",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Native desktop notifications with inline approval actions and customizable sounds for DeepSeek Harness.",
   "type": "module",

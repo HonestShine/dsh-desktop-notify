@@ -79,8 +79,9 @@ window.__ModuleLoader__.load({
       previewFailed: '试听失败',
       advancedGroup: '高级',
       collapse: '收起',
-      windowsAppId: 'Windows AppUserModelID',
-      windowsAppIdDesc: '默认与 DeepSeek Harness 安装包一致；仅在通知身份排查时修改。',
+      windowsAppId: 'Windows 通知身份（可选）',
+      windowsAppIdDesc: '留空自动识别 DeepSeek Harness 已注册的开始菜单快捷方式；仅在自动识别失败时手工填写 AppUserModelID。',
+      windowsAppIdPlaceholder: '自动识别',
       macosHelper: 'macOS 定制 notifier 路径',
       macosHelperDesc: '可选：指向自行构建的 terminal-notifier；留空使用内置版本。',
       macosCaveat: 'macOS 通知身份显示为 terminal-notifier（系统限制），按钮、声音与点击回传均可正常使用。',
@@ -164,8 +165,9 @@ window.__ModuleLoader__.load({
       previewFailed: 'Preview failed',
       advancedGroup: 'Advanced',
       collapse: 'Collapse',
-      windowsAppId: 'Windows AppUserModelID',
-      windowsAppIdDesc: 'Matches the DeepSeek Harness installer; change only when diagnosing notification identity.',
+      windowsAppId: 'Windows notification identity (optional)',
+      windowsAppIdDesc: 'Leave empty to use the AppUserModelID of the installed DeepSeek Harness shortcut; set it only when auto-detection fails.',
+      windowsAppIdPlaceholder: 'Auto-detect',
       macosHelper: 'macOS custom notifier path',
       macosHelperDesc: 'Optional: a self-built terminal-notifier; leave empty to use the bundled one.',
       macosCaveat: 'macOS shows notifications as terminal-notifier (system limitation); buttons, sound, and click callbacks still work.',
@@ -670,7 +672,7 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'dtn-row', key: 'windows' }, [
                 h('div', { key: 'label' }, [
                   h('div', { className: 'dtn-row-title', key: 't' }, t('windowsIdentity')),
-                  h('div', { className: 'dtn-row-desc dtn-mono', key: 'd' }, status?.windows?.appId ?? windows.appId ?? ''),
+                  h('div', { className: 'dtn-row-desc dtn-mono', key: 'd' }, status?.notifier?.appId ?? status?.windows?.resolvedAppId ?? (windows.appId || t('windowsAppIdPlaceholder'))),
                 ]),
                 h('div', { className: 'dtn-controls', key: 'controls' }, windowsConfirm
                   ? [
@@ -871,6 +873,7 @@ window.__ModuleLoader__.load({
                   className: 'dtn-input',
                   style: { width: '220px' },
                   value: appIdDraft,
+                  placeholder: t('windowsAppIdPlaceholder'),
                   disabled: !writable || !enabled,
                   onChange: (event) => setAppIdDraft(event.target.value),
                 }),
