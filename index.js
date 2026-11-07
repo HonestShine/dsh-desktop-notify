@@ -230,7 +230,7 @@ export default class DesktopNotifyService extends Service {
       if (this.#shouldRemind('question')) {
         try {
           const copy = formatQuestion(request, this.#locale(), this.#sessionTitleOf(request?.agent))
-          void this.#remind(copy, { sound: !cued })
+          void this.#remind(copy, { sound: !cued, silent: cued })
         } catch (error) {
           this.log(`question reminder failed: ${messageOf(error)}`, 'warn')
         }
@@ -314,6 +314,7 @@ export default class DesktopNotifyService extends Service {
         title: copy.title,
         body: copy.body,
         actions,
+        silent: cued,
         timeoutMs: effectiveTimeoutMs,
         timeoutSeconds: Math.max(5, Math.ceil(effectiveTimeoutMs / 1000)),
         onHandle: (handle) => {
@@ -385,6 +386,7 @@ export default class DesktopNotifyService extends Service {
    */
   #cueAttention() {
     if (!this.config.enabled || !this.config.attention.enabled) return false
+    if (this.config.attention.mode === 'none') return false
     const now = Date.now()
     if (now - this.lastCueAt >= 800) {
       this.lastCueAt = now
@@ -396,13 +398,17 @@ export default class DesktopNotifyService extends Service {
   /**
    * Show a non-interactive reminder and play the configured sound.
    * @param {{ title: string, body: string }} copy - Notification copy.
-   * @param {{ sound?: boolean }} [options] - `sound: false` when a cue already played.
+   * @param {{ sound?: boolean, silent?: boolean }} [options] - A cue already played for this prompt.
    * @returns {Promise<void>}
    */
   async #remind(copy, options = {}) {
     if (this.disposed) return
     if (options.sound !== false) void this.sound.play(this.config.sound, { preview: false })
-    void this.notifier.show({ title: copy.title, body: copy.body }).catch((error) => {
+    void this.notifier.show({
+      title: copy.title,
+      body: copy.body,
+      silent: options.silent === true,
+    }).catch((error) => {
       this.log(`reminder notification failed: ${messageOf(error)}`, 'warn')
     })
   }
