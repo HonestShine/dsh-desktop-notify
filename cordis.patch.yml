@@ -1,0 +1,5 @@
+# Inserts the desktop notification service into the active profile.
+# The entry id doubles as the settings namespace consumed by client.js.
+- insert:
+    - id: desktop-notify
+      name: dsh-desktop-notify

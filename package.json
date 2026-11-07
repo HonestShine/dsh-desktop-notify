@@ -1,0 +1,78 @@
+{
+  "name": "dsh-desktop-notify",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native desktop notifications with inline approval actions and customizable sounds for DeepSeek Harness.",
+  "type": "module",
+  "license": "MIT",
+  "author": "HonestShine",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HonestShine/dsh-desktop-notify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HonestShine/dsh-desktop-notify/issues"
+  },
+  "homepage": "https://github.com/HonestShine/dsh-desktop-notify#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "desktop-notification",
+    "notification",
+    "approval",
+    "toast",
+    "winrt",
+    "cordis"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "client.js",
+    "cordis.patch.yml",
+    "locale",
+    "assets",
+    "icon.svg",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "node-notifier": "12.1.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0",
+    "@deepseek-ai/schemastery": "^3.18.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-general"
+      ]
+    }
+  }
+}

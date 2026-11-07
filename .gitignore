@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Python virtualenv (repo tooling, if any)
+.venv/
+__pycache__/
+
+# Build artifacts
+dist/
+coverage/
+*.tgz
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and OS noise
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.idea/
+.vscode/
+*.swp
