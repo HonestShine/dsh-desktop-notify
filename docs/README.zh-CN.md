@@ -3,6 +3,7 @@
 [English](../README.md) | 中文
 
 [![Release](https://img.shields.io/github/v/release/HonestShine/dsh-desktop-notify)](https://github.com/HonestShine/dsh-desktop-notify/releases)
+[![npm](https://img.shields.io/npm/v/@honorshine/dsh-desktop-notify)](https://www.npmjs.com/package/@honorshine/dsh-desktop-notify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
 DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理权限请求（拒绝 / 允许一次），并为任务完成、提问与错误提供提醒；通知铃声支持系统提示音、内置铃声、自定义音频与静音。
@@ -99,6 +100,17 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 - pnpm 会把依赖记录成 `github:HonestShine/dsh-desktop-notify#<commit sha>`；`dsh plugin` 会自动把带 `dsh.bundle` 的包加入该 profile 的 `dsh.profile.bundles`，不需要手工改 `cordis.patch.yml`。
 - 本插件没有构建脚本，git 安装时 pnpm 的 `prepare` 只会安装依赖（`node-notifier`），通常不会触发 `allowBuilds` 提示。
 - 需要 Node.js `^22.22.2 || ^24.15.0 || >=26.0.0`（`node-notifier@12` 的引擎要求，已写入 `package.json` 的 `engines`）。
+
+### 方式 C：从 npm 安装
+
+插件已发布为 `@honorshine/dsh-desktop-notify`，预构建安装免 `allowBuilds` 授权：
+
+```powershell
+dsh plugin --profile web add @honorshine/dsh-desktop-notify
+```
+
+- 固定版本：`dsh plugin --profile web add @honorshine/dsh-desktop-notify@0.1.1`
+- npm 包的 `repository` 字段指向本仓库，市场会自动关联下载量。
 
 ### 说明
 
@@ -241,7 +253,7 @@ node scripts/make-chime.mjs        # 重新生成 assets/notify.wav 与 assets/a
 ## 版本与发布
 
 - 版本历史见 [CHANGELOG.md](../CHANGELOG.md)。
-- 发布包：GitHub Releases（`v0.1.0` 起）；插件未发布到 npm，`package.json` 中保留 `"private": true` 以防误发布。
+- 发布包：GitHub Releases（`v0.1.0` 起）；同时发布到 npm：`@honorshine/dsh-desktop-notify`。
 
 ## 文档
 

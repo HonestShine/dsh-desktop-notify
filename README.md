@@ -3,6 +3,7 @@
 English | [中文](docs/README.zh-CN.md)
 
 [![Release](https://img.shields.io/github/v/release/HonestShine/dsh-desktop-notify)](https://github.com/HonestShine/dsh-desktop-notify/releases)
+[![npm](https://img.shields.io/npm/v/@honorshine/dsh-desktop-notify)](https://www.npmjs.com/package/@honorshine/dsh-desktop-notify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Native desktop notifications for DeepSeek Harness: permission requests can be answered directly from the system notification (Reject / Allow once), and turn completion, questions and errors can raise reminders; notification sounds support system sounds, a built-in chime, custom audio and silence.
@@ -100,6 +101,17 @@ dsh plugin --profile web add github:HonestShine/dsh-desktop-notify
 - pnpm records the dependency as `github:HonestShine/dsh-desktop-notify#<commit sha>`; `dsh plugin` automatically adds packages that declare `dsh.bundle` to the profile's `dsh.profile.bundles`, so `cordis.patch.yml` does not need manual edits.
 - The plugin has no build scripts; pnpm's `prepare` only installs dependencies (`node-notifier`), so the `allowBuilds` prompt normally does not appear.
 - Requires Node.js `^22.22.2 || ^24.15.0 || >=26.0.0` (the `node-notifier@12` engine requirement, declared under `engines` in `package.json`).
+
+### Option C: install from npm
+
+The package is published as `@honorshine/dsh-desktop-notify`; a prebuilt install skips the build-approval step:
+
+```powershell
+dsh plugin --profile web add @honorshine/dsh-desktop-notify
+```
+
+- To pin a version: `dsh plugin --profile web add @honorshine/dsh-desktop-notify@0.1.1`
+- The npm package's `repository` field points back at this repository, so storefronts can link the two automatically.
 
 ### Notes
 
@@ -242,7 +254,7 @@ The bell icon, idle-away detection and session-title body are interactions inspi
 ## Versioning & releases
 
 - Version history: [CHANGELOG.md](CHANGELOG.md).
-- Releases: GitHub Releases (since `v0.1.0`); the plugin is not published to npm and keeps `"private": true` to prevent accidental publishing.
+- Releases: GitHub Releases (since `v0.1.0`); the package is also published to npm as `@honorshine/dsh-desktop-notify`.
 
 ## Documentation
 

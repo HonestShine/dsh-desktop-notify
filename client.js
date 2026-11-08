@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-desktop-notify',
+  id: '@honorshine/dsh-desktop-notify',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -1061,11 +1061,11 @@ window.__ModuleLoader__.load({
 
 /** Inject the plugin's stylesheet once per page and return its disposer. */
 function installStyles() {
-  const tagId = 'dsh-desktop-notify/styles'
+  const tagId = '@honorshine/dsh-desktop-notify/styles'
   if (typeof document === 'undefined') return () => {}
   if (document.querySelector(`style[data-plugin-css="${tagId}"]`) !== null) return () => {}
   const style = document.createElement('style')
-  style.dataset.plugin = 'dsh-desktop-notify'
+  style.dataset.plugin = '@honorshine/dsh-desktop-notify'
   style.dataset.pluginCss = tagId
   style.textContent = `
 .dtn-root{display:flex;flex-direction:column;gap:20px;padding:4px 0 32px}

@@ -2,4 +2,4 @@
 # The entry id doubles as the settings namespace consumed by client.js.
 - insert:
     - id: desktop-notify
-      name: dsh-desktop-notify
+      name: '@honorshine/dsh-desktop-notify'

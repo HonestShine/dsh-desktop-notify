@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 包名改为 `@honorshine/dsh-desktop-notify` 并发布到 npm（scoped、public access）；`cordis.patch.yml` 与 `client.js` 的模块 id 同步更新；`package.json` 增加 `main`、`publishConfig.access`，移除 `private`。
+
 ### 文档
 
 - README 拆分为英文入口 `README.md` 与中文介绍 `docs/README.zh-CN.md`；介绍文档统一放在 `docs/` 下。
