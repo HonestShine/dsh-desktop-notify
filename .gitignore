@@ -28,3 +28,6 @@ desktop.ini
 .idea/
 .vscode/
 *.swp
+
+# Upstream release monitor state (scheduled DSH adaptation task)
+.upstream-dsh-release.json
