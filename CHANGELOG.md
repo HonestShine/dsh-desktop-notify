@@ -5,7 +5,12 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.1.2] - 2026-11-16
+
+### 兼容性
+
+- 适配 DSH `0.2.2-rc.2` / `0.2.2-rc.3`：核对 approval/question/settings/typert/connection 相关接口，仅有向后兼容变化（`settings.section` 的 `openSettings` 增加可选 `sectionId`、`ui-approval` 插槽增加可选 `warning` 字段、user-questions 放宽历史 fork 提问），插件代码无需改动。
+- 确认 `0.2.2-rc.3` 携带 `@deepseek-ai/cordis 4.1.0`、`@deepseek-ai/schemastery 3.19.0`，现有 peer 范围 `^4.0.0` / `^3.18.0` 覆盖。
 
 ### 变更
 
@@ -14,6 +19,7 @@
 ### 文档
 
 - README 拆分为英文入口 `README.md` 与中文介绍 `docs/README.zh-CN.md`；介绍文档统一放在 `docs/` 下。
+- 新增插件市场配图 `screenshots.json` 与 `docs/screenshots/{toast,settings}.png`。
 
 ## [0.1.1] - 2026-11-07
 
@@ -86,3 +92,4 @@
 
 [0.1.0]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.0
 [0.1.1]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.1
+[0.1.2]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.2
