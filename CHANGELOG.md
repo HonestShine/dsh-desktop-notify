@@ -5,6 +5,13 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.3] - 2026-11-18
+
+### 兼容性
+
+- 适配 DSH `0.2.2-rc.4`：该版本为修复版本（模型异常响应处理、LiveShare 桌面端创建分享），与插件相关的接口文件（settings/approval/question/typert/connection）逐项比对与 rc.3 一致，插件代码无需改动。
+- `0.2.2-rc.4` 仍携带 `@deepseek-ai/cordis 4.1.0`、`@deepseek-ai/schemastery 3.19.0`，现有 peer 范围 `^4.0.0` / `^3.18.0` 覆盖。
+
 ## [0.1.2] - 2026-11-16
 
 ### 兼容性
@@ -93,3 +100,4 @@
 [0.1.0]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.0
 [0.1.1]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.1
 [0.1.2]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.2
+[0.1.3]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.3

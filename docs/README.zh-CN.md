@@ -39,19 +39,20 @@ DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理
 
 ## DSH 兼容性
 
-DSH 目前以 RC 形式发布（`0.2.0-rc.x`、`0.2.1-rc.x`、`0.2.2-rc.x`）；本插件按 **0.2.0-rc.2 / 0.2.1-rc.5 / 0.2.2-rc.3** 审计并适配，覆盖 0.2.0/0.2.1/0.2.2 各中间 RC（含 0.2.2-rc.1 / rc.2）。
+DSH 目前以 RC 形式发布（`0.2.0-rc.x`、`0.2.1-rc.x`、`0.2.2-rc.x`）；本插件按 **0.2.0-rc.2 / 0.2.1-rc.5 / 0.2.2-rc.4** 审计并适配，覆盖 0.2.0/0.2.1/0.2.2 各中间 RC（含 0.2.2-rc.1 / rc.2 / rc.3）。
 
 | DSH | 设置导航图标 | 配置表单 | 通知/审批 |
 |---|---|---|---|
-| 0.2.2-rc.3 / 0.2.2-rc.2 / 0.2.2-rc.1 | 原生 `settings.section.icon` | `configForms` + `volatile` 字段 | 不变 |
+| 0.2.2-rc.4 / 0.2.2-rc.3 / 0.2.2-rc.2 / 0.2.2-rc.1 | 原生 `settings.section.icon` | `configForms` + `volatile` 字段 | 不变 |
 | 0.2.1-rc.5 / 0.2.1-rc.4 | DOM 补丁 | `configForms` + `volatile` 字段 | 不变 |
 | 0.2.0-rc.2 | DOM 补丁 | `configForms` + `volatile` 字段 | 不变 |
 
 适配要点：
 
-- peer 范围放宽为 `@deepseek-ai/cordis ^4.0.0`、`@deepseek-ai/schemastery ^3.18.0`，兼容 0.2.0 的 cordis `~4.0.4` / schemastery `~3.18.4` 与 0.2.2 的 cordis `~4.1.0` / schemastery `~3.19.0`；0.2.2-rc.3 实测携带 cordis 4.1.0 / schemastery 3.19.0，两个范围均覆盖。
-- 已按三条版本线核对（0.2.2-rc.1 / rc.2 / rc.3）`approval/request` 与结果词表、`user-questions/request`、`agent/status|error|disposed`、`sessionTitle.get`、`connection.requestRejection`、`typertGateway.hasLiveClient`、`configForms.get/mutate/whileServed`、`settings.section` 与 volatile 表单过滤。
+- peer 范围放宽为 `@deepseek-ai/cordis ^4.0.0`、`@deepseek-ai/schemastery ^3.18.0`，兼容 0.2.0 的 cordis `~4.0.4` / schemastery `~3.18.4` 与 0.2.2 的 cordis `~4.1.0` / schemastery `~3.19.0`；0.2.2-rc.3/rc.4 实测携带 cordis 4.1.0 / schemastery 3.19.0，两个范围均覆盖。
+- 已按三条版本线核对（0.2.2-rc.1 / rc.2 / rc.3 / rc.4）`approval/request` 与结果词表、`user-questions/request`、`agent/status|error|disposed`、`sessionTitle.get`、`connection.requestRejection`、`typertGateway.hasLiveClient`、`configForms.get/mutate/whileServed`、`settings.section` 与 volatile 表单过滤。
 - 0.2.2-rc.2/rc.3 仅有向后兼容变化：`settings.section` 上下文的 `openSettings` 增加可选 `sectionId`、`ui-approval` 插槽增加可选 `warning` 字段、user-questions 放宽历史普通 fork 提问；approval/question 事件与结果词表未变。
+- 0.2.2-rc.4 为修复版本（模型异常响应、LiveShare 桌面端创建分享），与插件相关的接口文件逐项比对与 rc.3 一致，无需改代码。
 - `displayReason` 在 0.2.x 是 `{ en, zh, ... }` 本地化对象（不是字符串）；插件会按当前界面语言取值。
 - 0.2.2 的 `settings.section.icon` 是新增 slot；0.2.0/0.2.1 没有该 slot，插件自动回落到 DOM 补丁，因此三个版本都能显示铃铛。
 - `configForms` 改为可选注入：如果某个组合不提供它，通知、审批、presence 仍工作，只是不显示设置页。

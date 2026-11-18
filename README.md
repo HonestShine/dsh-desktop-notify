@@ -39,19 +39,20 @@ Native desktop notifications for DeepSeek Harness: permission requests can be an
 
 ## DSH compatibility
 
-DSH currently ships as release candidates (`0.2.0-rc.x`, `0.2.1-rc.x`, `0.2.2-rc.x`); this plugin was audited and adapted against **0.2.0-rc.2 / 0.2.1-rc.5 / 0.2.2-rc.3**, covering the intermediate RCs of 0.2.0/0.2.1/0.2.2 (including 0.2.2-rc.1 and rc.2).
+DSH currently ships as release candidates (`0.2.0-rc.x`, `0.2.1-rc.x`, `0.2.2-rc.x`); this plugin was audited and adapted against **0.2.0-rc.2 / 0.2.1-rc.5 / 0.2.2-rc.4**, covering the intermediate RCs of 0.2.0/0.2.1/0.2.2 (including 0.2.2-rc.1, rc.2 and rc.3).
 
 | DSH | Settings nav icon | Config form | Notifications/approvals |
 |---|---|---|---|
-| 0.2.2-rc.3 / 0.2.2-rc.2 / 0.2.2-rc.1 | native `settings.section.icon` | `configForms` + `volatile` fields | unchanged |
+| 0.2.2-rc.4 / 0.2.2-rc.3 / 0.2.2-rc.2 / 0.2.2-rc.1 | native `settings.section.icon` | `configForms` + `volatile` fields | unchanged |
 | 0.2.1-rc.5 / 0.2.1-rc.4 | DOM patch | `configForms` + `volatile` fields | unchanged |
 | 0.2.0-rc.2 | DOM patch | `configForms` + `volatile` fields | unchanged |
 
 Adaptation notes:
 
-- Peer ranges were widened to `@deepseek-ai/cordis ^4.0.0` and `@deepseek-ai/schemastery ^3.18.0`, covering cordis `~4.0.4` / schemastery `~3.18.4` in 0.2.0 and cordis `~4.1.0` / schemastery `~3.19.0` in 0.2.2. 0.2.2-rc.3 ships cordis 4.1.0 / schemastery 3.19.0, which both ranges cover.
-- `approval/request` and its result vocabulary, `user-questions/request`, `agent/status|error|disposed`, `sessionTitle.get`, `connection.requestRejection`, `typertGateway.hasLiveClient`, `configForms.get/mutate/whileServed`, `settings.section` and volatile form filtering were checked against all three version lines (0.2.2-rc.1, rc.2 and rc.3).
+- Peer ranges were widened to `@deepseek-ai/cordis ^4.0.0` and `@deepseek-ai/schemastery ^3.18.0`, covering cordis `~4.0.4` / schemastery `~3.18.4` in 0.2.0 and cordis `~4.1.0` / schemastery `~3.19.0` in 0.2.2. 0.2.2-rc.3/rc.4 ship cordis 4.1.0 / schemastery 3.19.0, which both ranges cover.
+- `approval/request` and its result vocabulary, `user-questions/request`, `agent/status|error|disposed`, `sessionTitle.get`, `connection.requestRejection`, `typertGateway.hasLiveClient`, `configForms.get/mutate/whileServed`, `settings.section` and volatile form filtering were checked against all three version lines (0.2.2-rc.1 through rc.4).
 - 0.2.2-rc.2/rc.3 changed only backward-compatible surface: the `settings.section` context's `openSettings` accepts an optional `sectionId`, `ui-approval` slots gained an optional `warning` field, and user-questions now permits historical ordinary forks to ask; no approval/question event or result vocabulary changed.
+- 0.2.2-rc.4 is a bug-fix release (unexpected model responses, LiveShare desktop share creation); every plugin-facing file audited unchanged versus rc.3, so no code change was required.
 - `displayReason` is a localized `{ en, zh, ... }` object in 0.2.x (not a string); the plugin picks the value for the current UI language.
 - 0.2.2 adds the `settings.section.icon` slot; 0.2.0/0.2.1 do not have it, so the plugin falls back to its DOM patch and all three versions show the bell.
 - `configForms` is injected optionally: when a composition does not provide it, notifications, approvals and presence keep working; only the settings page is absent.
