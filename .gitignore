@@ -31,3 +31,6 @@ desktop.ini
 
 # Upstream release monitor state (scheduled DSH adaptation task)
 .upstream-dsh-release.json
+
+# GitHub issue watch state (scheduled issue maintenance task)
+.issue-watch.json
