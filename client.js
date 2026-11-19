@@ -91,7 +91,7 @@ window.__ModuleLoader__.load({
       advancedGroup: '高级',
       collapse: '收起',
       windowsAppId: 'Windows 通知身份（可选）',
-      windowsAppIdDesc: '留空自动识别 DeepSeek Harness 已注册的开始菜单快捷方式；仅在自动识别失败时手工填写 AppUserModelID。',
+      windowsAppIdDesc: '留空自动识别 DeepSeek Harness 已注册的开始菜单快捷方式；可填多个候选，用分号分隔，取第一个 Windows 已注册的身份。',
       windowsAppIdPlaceholder: '自动识别',
       macosHelper: 'macOS 定制 notifier 路径',
       macosHelperDesc: '可选：指向自行构建的 terminal-notifier；留空使用内置版本。',
@@ -188,7 +188,7 @@ window.__ModuleLoader__.load({
       advancedGroup: 'Advanced',
       collapse: 'Collapse',
       windowsAppId: 'Windows notification identity (optional)',
-      windowsAppIdDesc: 'Leave empty to use the AppUserModelID of the installed DeepSeek Harness shortcut; set it only when auto-detection fails.',
+      windowsAppIdDesc: 'Leave empty to use the AppUserModelID of the installed DeepSeek Harness shortcut; a semicolon-separated list is accepted and the first registered identity wins.',
       windowsAppIdPlaceholder: 'Auto-detect',
       macosHelper: 'macOS custom notifier path',
       macosHelperDesc: 'Optional: a self-built terminal-notifier; leave empty to use the bundled one.',
@@ -211,6 +211,7 @@ window.__ModuleLoader__.load({
       nativeIconActive = false
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'desktop-notify: locale')
       ctx.effect(() => installStyles(), 'desktop-notify: styles')
+      ctx.effect(() => startBadgeSync(), 'desktop-notify: badge')
       let idleSeconds = () => 180
       // Older compositions may not provide configForms. Notifications and the
       // presence reporter still work; only the settings page is absent.
@@ -1058,6 +1059,56 @@ window.__ModuleLoader__.load({
     return { inject, apply }
   },
 })
+
+/**
+ * Mirror the Host unread-reminder counter onto the app badge. Chromium exposes
+ * the Badging API on Windows and macOS; a composition without it keeps running
+ * with no badge. The badge is cosmetic, so polling failures stay silent.
+ * @returns {() => void} Disposer.
+ */
+function startBadgeSync() {
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') return () => {}
+  const canSet = typeof navigator.setAppBadge === 'function'
+  const canClear = typeof navigator.clearAppBadge === 'function'
+  if (!canSet && !canClear) return () => {}
+  let stopped = false
+  let last = -1
+  let timer
+  const sync = async () => {
+    if (stopped) return
+    try {
+      const status = await fetchJson(`${BASE}/status`, {}, true)
+      const unread = Number(status?.unread ?? 0)
+      if (!Number.isFinite(unread) || unread === last) return
+      last = unread
+      if (unread > 0) {
+        if (canSet) await navigator.setAppBadge(unread)
+      } else if (canClear) {
+        await navigator.clearAppBadge()
+      }
+    } catch {
+      // A badge is cosmetic; a failed poll is not worth surfacing.
+    }
+  }
+  // Leaving the window is the moment the badge starts to matter; refreshing on
+  // the transition means the user sees it without waiting for the next poll.
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') void sync()
+  }
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+  void sync()
+  timer = window.setInterval(() => { void sync() }, 5000)
+  return () => {
+    stopped = true
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
+    if (timer !== undefined) window.clearInterval(timer)
+    try {
+      if (canClear) void navigator.clearAppBadge()
+    } catch {
+      // Ignore a renderer that revoked badge support mid-session.
+    }
+  }
+}
 
 /** Inject the plugin's stylesheet once per page and return its disposer. */
 function installStyles() {

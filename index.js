@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { Service } from '@deepseek-ai/cordis'
 import { Config as ConfigSchema, normalizeConfig } from './lib/config.js'
-import { formatApproval, formatError, formatQuestion, formatTurnEnd, labelsFor, resolveLocale } from './lib/messages.js'
+import { formatApproval, formatError, formatPtcQuestion, formatQuestion, formatTurnEnd, labelsFor, resolveLocale } from './lib/messages.js'
 import { Notifier, sanitizeActions } from './lib/notifier.js'
 import { Presence } from './lib/presence.js'
 import { installRoutes } from './lib/routes.js'
@@ -125,6 +125,7 @@ export default class DesktopNotifyService extends Service {
         appId: this.config.windows.appId,
         resolvedAppId: notifier.appId,
         appIdSource: notifier.appIdSource,
+      appIdValidated: notifier.appIdValidated === true,
         appLogo: notifier.appLogo === true,
         canRepairProtocol: process.platform === 'win32',
       },
@@ -134,6 +135,7 @@ export default class DesktopNotifyService extends Service {
       },
       pendingApproval: this.pendingApproval !== undefined,
       lastOutcome: this.lastOutcome,
+      unread: this.unread,
     }
   }
 
@@ -153,7 +155,10 @@ export default class DesktopNotifyService extends Service {
    * @param {{ clientId: string, focused: boolean, locale?: string }} report - Presence frame.
    */
   reportPresence(report) {
+    const focused = report?.focused === true
     this.presence.update(report)
+    // Focusing the window means the user is looking again, so the badge clears.
+    if (focused) this.unread = 0
   }
 
   /**
@@ -173,6 +178,10 @@ export default class DesktopNotifyService extends Service {
       timeoutSeconds: 60,
     }).then((outcome) => {
       this.lastOutcome = { ...outcome, at: Date.now(), test: true }
+      // A test notification is also something the user has not acknowledged,
+      // so it counts toward the badge; otherwise the badge cannot be verified
+      // end to end from the settings page.
+      if (outcome?.reason !== 'error') this.unread += 1
     }).catch((error) => {
       this.lastOutcome = {
         reason: 'error',
@@ -226,6 +235,7 @@ export default class DesktopNotifyService extends Service {
       global: true,
     })
     ctx.on('user-questions/request', (request, next) => {
+      if (!this.#takeQuestionSlot()) return next()
       const cued = this.#cueAttention()
       if (this.#shouldRemind('question')) {
         try {
@@ -237,6 +247,22 @@ export default class DesktopNotifyService extends Service {
       }
       return next()
     }, { prepend: true, global: true })
+    // `run_code` can call `ask_user_question` without going through the question
+    // waterfall; the tool dispatch is the only observable signal for that case.
+    const onProgrammaticQuestion = (payload) => {
+      try {
+        if (payload?.name !== 'ask_user_question') return
+        if (!this.#takeQuestionSlot()) return
+        const cued = this.#cueAttention()
+        if (!this.#shouldRemind('question')) return
+        const copy = formatPtcQuestion(payload, this.#locale(), this.#sessionTitleOf(payload?.agent))
+        void this.#remind(copy, { sound: !cued, silent: cued })
+      } catch (error) {
+        this.log(`programmatic question reminder failed: ${messageOf(error)}`, 'warn')
+      }
+    }
+    ctx.on('tool/ptc-dispatch-start', onProgrammaticQuestion, { global: true })
+    ctx.on('tool/ptc-dispatch', onProgrammaticQuestion, { global: true })
     ctx.on('agent/status', (payload) => {
       try {
         const agent = payload?.agent
@@ -379,6 +405,19 @@ export default class DesktopNotifyService extends Service {
   }
 
   /**
+   * Claim the single reminder slot for one question prompt. The waterfall and
+   * the programmatic tool dispatch can describe the same prompt; whichever
+   * arrives first announces it and the other is suppressed.
+   * @returns {boolean} True when this prompt should be announced.
+   */
+  #takeQuestionSlot() {
+    const now = Date.now()
+    if (now - this.#questionAnnouncedAt < 2000) return false
+    this.#questionAnnouncedAt = now
+    return true
+  }
+
+  /**
    * Play the interaction cue when the agent needs the user. Independent of
    * window focus: an approval or a question must be audible even while the app
    * is in the foreground, where the in-app panel shows no sound of its own.
@@ -408,6 +447,17 @@ export default class DesktopNotifyService extends Service {
       title: copy.title,
       body: copy.body,
       silent: options.silent === true,
+    }).then((outcome) => {
+      // Transports report failures by resolving { reason: 'error' } instead of
+      // rejecting; ignoring that shape is what made a broken toast look
+      // successful. Record it so the settings page can show the last failure.
+      if (outcome?.reason !== 'error') {
+        this.unread += 1
+        return
+      }
+      const detail = String(outcome.error ?? 'unknown error')
+      this.lastOutcome = { reason: 'error', error: detail, at: Date.now(), remind: true }
+      this.log(`reminder notification failed: ${detail}`, 'warn')
     }).catch((error) => {
       this.log(`reminder notification failed: ${messageOf(error)}`, 'warn')
     })
@@ -424,6 +474,11 @@ export default class DesktopNotifyService extends Service {
   }
 
   #recent = new Map()
+
+  #questionAnnouncedAt = 0
+
+  /** Reminders raised since the window was last focused; mirrored to the badge. */
+  unread = 0
 
   #locale() {
     return this.presence.locale() ?? detectLocale()

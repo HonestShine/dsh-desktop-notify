@@ -20,7 +20,9 @@ Native desktop notifications for DeepSeek Harness: permission requests can be an
 - **Custom notification sound**: `system` / `bundled` / `custom` / `none`, previewable in settings.
 - **Interaction cue**: approvals and questions (including plan prompts) play a separate cue, **configured independently from the notification sound** and **regardless of window focus** — it plays even while the window is focused; also supports `bundled` / `custom` / `none` and preview.
 - **Reusable service**: the Host registers `ctx.desktopNotify`; other plugins can call `show()` to display a notification with buttons.
-- **Windows notification identity**: automatically reads the AppUserModelID of the installed `DeepSeek Harness.lnk`, so the toast header shows "DeepSeek Harness" and the application icon; falls back to a manually configured AUMID only when detection fails.
+- **Windows notification identity**: candidates are tried in order — `windows.appId` (semicolon-separated list allowed), the `DSH_NOTIFY_AUMIDS` environment variable, the AppUserModelID of the installed `DeepSeek Harness.lnk`, then the packaged fallback. Each candidate is validated through the WinRT notifier setting, so the toast header shows the real app name and icon; the chosen identity, its source and its validation state are reported in the status route and settings page.
+- **Unread badge**: every reminder raises a counter that is mirrored onto the app badge (taskbar on Windows, Dock on macOS); focusing the window clears it. Compositions without the Badging API keep running with no badge.
+- **Programmatic question reminders**: `ask_user_question` invoked from `run_code` does not emit `user-questions/request`, so the plugin also watches the tool dispatch. Both paths share one two-second slot, so a prompt is never announced twice.
 - **Windows protocol repair**: the settings page can re-register the `dshnotify:` protocol and open the system notification settings after confirmation.
 
 ## Platform support
@@ -34,6 +36,7 @@ Native desktop notifications for DeepSeek Harness: permission requests can be an
 | Custom audio | **WAV only** (`SoundPlayer`) | formats supported by `afplay` | `paplay` / `canberra-gtk-play` / `aplay` |
 | Notification identity | `DeepSeek Harness` (reuses the installer shortcut) + app icon | terminal-notifier (platform limitation) | app-name + icon |
 | Interaction cue | Yes (`SoundPlayer` plays a built-in/custom WAV) | `afplay` | `paplay` / `canberra-gtk-play` / `aplay` |
+| Unread badge | taskbar badge (`navigator.setAppBadge`) | Dock badge | not supported (renderer dependent) |
 
 > On macOS notifications appear as **terminal-notifier**, not DeepSeek Harness. This is a known limitation of node-notifier/terminal-notifier 3 (sender/icon cannot be set). Buttons, sounds and click callbacks still work. For full branding you can build your own terminal-notifier (`make icon ICON=... APP_NAME=...`) and set it under Settings → Advanced → macOS custom notifier path.
 

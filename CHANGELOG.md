@@ -5,6 +5,25 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-11-19
+
+### 新增
+
+- **未读角标**：每条提醒累加未读计数，客户端每 5 秒同步到应用角标（Windows 任务栏 / macOS Dock），窗口回到前台即清零；渲染层无 `navigator.setAppBadge` 时自动跳过。状态接口新增 `unread` 字段。
+- **程序化提问提醒**：`run_code` 内调用 `ask_user_question` 时不会触发 `user-questions/request`（实测确认），新增对 `tool/ptc-dispatch-start` / `tool/ptc-dispatch` 的监听补上这类提醒。两条路径共享两秒去重槽，避免重复通知。
+- **Windows 通知身份多候选**：`windows.appId` 支持分号分隔多个候选，并新增环境变量 `DSH_NOTIFY_AUMIDS`；候选按「配置 → 环境变量 → 快捷方式 → 内置兜底」顺序，用 `CreateToastNotifier(id).Setting` 校验是否被系统注册。状态接口新增 `appIdValidated` 与候选列表。
+
+### 修复
+
+- **PowerShell 绝对路径**：`lib/winrt.js` 之前用裸名 `powershell.exe`（依赖 PATH），PATH 被裁剪或被劫持时 toast 会静默失败且退出码为 0。现改为优先使用 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`，与同文件 `wscript.exe` 的写法对齐。
+- **提醒失败不再静默**：传输层失败时 resolve `{ reason: 'error' }` 而不是 reject，原提醒路径只处理 reject，导致失败被完全吞掉。现在会记录 `lastOutcome` 并写日志。
+- **测试通知计入未读**：设置页「发送测试通知」现在与其他提醒一样累加未读计数，避免角标统计口径不一致。
+
+### 文档
+
+- README / 中文 README 补充未读角标、程序化提问提醒、通知身份候选链与平台支持表。
+- 新增 `docs/research/competitor-notify-plugins.md`：两个同类插件的对标调研与灵感清单。
+
 ## [0.1.3] - 2026-11-18
 
 ### 兼容性

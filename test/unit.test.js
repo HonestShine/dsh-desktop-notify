@@ -7,7 +7,16 @@ import path from 'node:path'
 import { normalizeConfig } from '../lib/normalize.js'
 import { Presence } from '../lib/presence.js'
 import { isRootSession } from '../lib/session.js'
-import { formatApproval, formatTurnEnd, localizedReason, resolveLocale, truncate } from '../lib/messages.js'
+import {
+  formatApproval,
+  formatPtcQuestion,
+  formatTurnEnd,
+  labelsFor,
+  localizedReason,
+  parseToolArguments,
+  resolveLocale,
+  truncate,
+} from '../lib/messages.js'
 import {
   buildLinuxOptions,
   buildMacOptions,
@@ -20,7 +29,16 @@ import {
   toastSoundOptions,
   validateSoundFile,
 } from '../lib/sound.js'
-import { buildToastXml, escapeXml, isActionToken, normalizeWindowsSound, parseAumidLookup } from '../lib/winrt.js'
+import {
+  buildToastXml,
+  escapeXml,
+  isActionToken,
+  normalizeWindowsSound,
+  parseAumidLookup,
+  parseAumidProbe,
+  powershellPath,
+  splitAppIdCandidates,
+} from '../lib/winrt.js'
 
 const ASSET = fileURLToPath(new URL('../assets/notify.wav', import.meta.url))
 const ALERT_ASSET = fileURLToPath(new URL('../assets/alert.wav', import.meta.url))
@@ -336,3 +354,43 @@ test('messages resolve structured displayReason and session lineage', () => {
   assert.equal(isRootSession({ session: { header: { parentSession: 'p' } } }), false)
   assert.equal(isRootSession({ session: { header: {} } }), true)
 })
+
+test('powershellPath resolves to an absolute shell when the system one exists', () => {
+  const resolved = powershellPath()
+  assert.equal(typeof resolved, 'string')
+  assert.ok(resolved.length > 0)
+  if (process.platform === 'win32') {
+    assert.ok(path.isAbsolute(resolved), 'expected an absolute PowerShell path on Windows')
+    assert.match(resolved.replace(/\\/gu, '/'), /powershell\.exe$/iu)
+  } else {
+    assert.equal(resolved, 'powershell.exe')
+  }
+})
+
+test('splitAppIdCandidates trims, dedupes, and keeps the written order', () => {
+  assert.deepEqual(splitAppIdCandidates(' A ; b;;A;  '), ['A', 'b'])
+  assert.deepEqual(splitAppIdCandidates('com.a;COM.A;com.b'), ['com.a', 'com.b'])
+  assert.deepEqual(splitAppIdCandidates(''), [])
+  assert.deepEqual(splitAppIdCandidates(undefined), [])
+})
+
+test('parseAumidProbe reads only a concrete validated identity', () => {
+  assert.deepEqual(parseAumidProbe('{"aumid":"X","setting":"Enabled"}'), { appId: 'X', setting: 'Enabled' })
+  assert.equal(parseAumidProbe('{}'), undefined)
+  assert.equal(parseAumidProbe('not json'), undefined)
+  assert.equal(parseAumidProbe('{"aumid":""}'), undefined)
+})
+
+test('formatPtcQuestion reads tool arguments from an object or JSON text', () => {
+  const copy = formatPtcQuestion({ arguments: { questions: [{ question: '要部署到哪个环境？' }] } }, 'zh')
+  assert.equal(copy.title, labelsFor('zh').questionTitle)
+  assert.match(copy.body, /要部署到哪个环境/u)
+  const fromText = formatPtcQuestion({ arguments: JSON.stringify({ questions: [{ question: 'Which env?' }] }) }, 'en')
+  assert.equal(fromText.body, 'Which env?')
+  const fallback = formatPtcQuestion({}, 'en')
+  assert.equal(fallback.body, labelsFor('en').questionFallback)
+  assert.equal(parseToolArguments('{"a":1}')?.a, 1)
+  assert.equal(parseToolArguments('nope'), undefined)
+  assert.equal(parseToolArguments(undefined), undefined)
+})
+

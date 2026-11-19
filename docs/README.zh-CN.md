@@ -20,7 +20,9 @@ DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理
 - **自定义铃声**：`system` / `bundled` / `custom` / `none` 四种模式，设置页可试听。
 - **交互提示音**：权限确认与提问（含计划征询）触发时播放独立提示音，**与通知铃声分开配置**，且**不受窗口焦点限制**——窗口在前台也响；同样支持 `bundled` / `custom` / `none` 与试听。
 - **可复用服务**：Host 注册 `ctx.desktopNotify`，其他插件可调用 `show()` 弹出带按钮的通知。
-- **Windows 通知身份**：自动读取安装包注册的 `DeepSeek Harness.lnk` 的 AppUserModelID，通知头显示「DeepSeek Harness」和应用图标；解析失败时才回退到手工配置的 AUMID。
+- **Windows 通知身份**：按顺序尝试候选——`windows.appId`（支持分号分隔多个）、环境变量 `DSH_NOTIFY_AUMIDS`、安装包注册的 `DeepSeek Harness.lnk` 的 AppUserModelID、最后是内置兜底值。每个候选都会用 WinRT notifier 的 `Setting` 校验是否真的被 Windows 注册，因此通知头能显示真实应用名与图标；最终采用的身份、来源与校验状态会出现在状态接口与设置页。
+- **未读角标**：每次提醒累加计数并同步到应用角标（Windows 任务栏、macOS Dock），窗口回到前台即清零；渲染层不支持 Badging API 时自动跳过，不影响其他功能。
+- **程序化提问提醒**：`run_code` 内调用的 `ask_user_question` 不会触发 `user-questions/request`，因此额外监听工具分发事件；两条路径共享同一个两秒去重槽，同一个提问不会提醒两次。
 - **Windows 协议修复**：设置页可重新注册 `dshnotify:` 协议，并在确认后打开系统通知设置。
 
 ## 平台支持
@@ -34,6 +36,7 @@ DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理
 | 自定义音频 | **仅 .wav**（SoundPlayer） | `afplay` 支持的格式 | `paplay` / `canberra-gtk-play` / `aplay` |
 | 通知身份 | `DeepSeek Harness`（自动复用安装包快捷方式）+ 应用图标 | terminal-notifier（系统限制） | app-name + 图标 |
 | 交互提示音 | 支持（`SoundPlayer` 播放内置/自定义 .wav） | `afplay` | `paplay` / `canberra-gtk-play` / `aplay` |
+| 未读角标 | 任务栏角标（`navigator.setAppBadge`） | Dock 角标 | 不支持（取决于渲染层） |
 
 > macOS 上通知会显示为 **terminal-notifier**，不是 DeepSeek Harness。这是 node-notifier/terminal-notifier 3 的已知限制（无法设置 sender/图标）。按钮、声音与点击回传均正常。若需要完全品牌化，可自行构建 terminal-notifier（`make icon ICON=... APP_NAME=...`），并在设置页「高级 → macOS 定制 notifier 路径」中填写。
 
