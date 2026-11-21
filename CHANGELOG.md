@@ -5,6 +5,16 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.2] - 2026-11-21
+
+### 新增
+
+- 在 `package.json` 声明宿主版本要求 `engines.dsh: >=0.2.0-rc.2 <0.3.0-0`，插件市场会显示 DSH 版本要求（此前显示「未声明宿主要求」）。
+
+### 文档
+
+- README / 中文 README 补充 `engines.dsh` 声明说明。
+
 ## [0.2.1] - 2026-11-19
 
 ### 兼容性
@@ -129,3 +139,4 @@
 [0.1.3]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.3
 [0.2.0]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.2.0
 [0.2.1]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.2.1
+[0.2.2]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.2.2

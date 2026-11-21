@@ -1,6 +1,6 @@
 {
   "name": "@honorshine/dsh-desktop-notify",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "main": "./index.js",
   "publishConfig": {
     "access": "public"
@@ -11,6 +11,7 @@
   "author": "HonestShine",
   "packageManager": "pnpm@12.6.0",
   "engines": {
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0",
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "repository": {

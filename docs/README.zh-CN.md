@@ -53,6 +53,7 @@ DSH 目前以 RC 形式发布（`0.2.0-rc.x`、`0.2.1-rc.x`、`0.2.2-rc.x`）；
 适配要点：
 
 - peer 范围放宽为 `@deepseek-ai/cordis ^4.0.0`、`@deepseek-ai/schemastery ^3.18.0`，兼容 0.2.0 的 cordis `~4.0.4` / schemastery `~3.18.4` 与 0.2.2 的 cordis `~4.1.0` / schemastery `~3.19.0`；0.2.2-rc.3/rc.4/rc.5 实测携带 cordis 4.1.0 / schemastery 3.19.0，两个范围均覆盖。
+- 宿主版本要求通过 `package.json` 的 `engines.dsh: >=0.2.0-rc.2 <0.3.0-0` 声明（顶层优先于 `dsh.engines.dsh`），插件市场据此显示 DSH 版本要求。
 - 已按三条版本线核对（0.2.2-rc.1 / rc.2 / rc.3 / rc.4 / rc.5）`approval/request` 与结果词表、`user-questions/request`、`agent/status|error|disposed`、`sessionTitle.get`、`connection.requestRejection`、`typertGateway.hasLiveClient`、`configForms.get/mutate/whileServed`、`settings.section` 与 volatile 表单过滤。
 - 0.2.2-rc.2/rc.3 仅有向后兼容变化：`settings.section` 上下文的 `openSettings` 增加可选 `sectionId`、`ui-approval` 插槽增加可选 `warning` 字段、user-questions 放宽历史普通 fork 提问；approval/question 事件与结果词表未变。
 - 0.2.2-rc.4 为修复版本（模型异常响应、LiveShare 桌面端创建分享），与插件相关的接口文件逐项比对与 rc.3 一致，无需改代码。

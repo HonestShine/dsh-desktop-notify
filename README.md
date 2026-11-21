@@ -53,6 +53,7 @@ DSH currently ships as release candidates (`0.2.0-rc.x`, `0.2.1-rc.x`, `0.2.2-rc
 Adaptation notes:
 
 - Peer ranges were widened to `@deepseek-ai/cordis ^4.0.0` and `@deepseek-ai/schemastery ^3.18.0`, covering cordis `~4.0.4` / schemastery `~3.18.4` in 0.2.0 and cordis `~4.1.0` / schemastery `~3.19.0` in 0.2.2. 0.2.2-rc.3/rc.4/rc.5 ship cordis 4.1.0 / schemastery 3.19.0, which both ranges cover.
+- Host requirement is declared in `package.json` as `engines.dsh: >=0.2.0-rc.2 <0.3.0-0` (top-level `engines.dsh` wins over `dsh.engines.dsh`); the plugin market reads it and shows the DSH range on the plugin card.
 - `approval/request` and its result vocabulary, `user-questions/request`, `agent/status|error|disposed`, `sessionTitle.get`, `connection.requestRejection`, `typertGateway.hasLiveClient`, `configForms.get/mutate/whileServed`, `settings.section` and volatile form filtering were checked against all three version lines (0.2.2-rc.1 through rc.5).
 - 0.2.2-rc.2/rc.3 changed only backward-compatible surface: the `settings.section` context's `openSettings` accepts an optional `sectionId`, `ui-approval` slots gained an optional `warning` field, and user-questions now permits historical ordinary forks to ask; no approval/question event or result vocabulary changed.
 - 0.2.2-rc.4 is a bug-fix release (unexpected model responses, LiveShare desktop share creation); every plugin-facing file audited unchanged versus rc.3, so no code change was required.
