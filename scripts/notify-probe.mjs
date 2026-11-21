@@ -1,5 +1,5 @@
 /**
- * Manual platform probe for the notification/action round trip.
+ * Manual macOS probe for the terminal-notifier/action round trip.
  *
  * Usage (after `pnpm install` in the plugin directory):
  *   node scripts/notify-probe.mjs [seconds]
@@ -10,14 +10,13 @@
 import { setTimeout as delay } from 'node:timers/promises'
 
 const seconds = Number(process.argv[2] ?? '60')
-const platform = process.platform
-const rawAppId = process.env.DSH_NOTIFY_APP_ID
-const appId = rawAppId === 'none' ? '' : rawAppId || 'com.deepseek.dsh'
+if (process.platform !== 'darwin') {
+  console.error('notify-probe.mjs is the macOS probe; use scripts/winrt-probe.mjs on Windows')
+  process.exit(1)
+}
 
-const { default: notifier, WindowsToaster, NotificationCenter, NotifySend } = await import('node-notifier')
-
-const Ctor = platform === 'win32' ? WindowsToaster : platform === 'darwin' ? NotificationCenter : NotifySend
-const instance = new Ctor({ withFallback: false })
+const { NotificationCenter } = await import('node-notifier')
+const instance = new NotificationCenter({ withFallback: false })
 const actions = ['拒绝', '允许一次']
 
 const outcome = await new Promise((resolve) => {
@@ -29,32 +28,14 @@ const outcome = await new Promise((resolve) => {
   }, Math.max(5, Math.min(seconds, 300)) * 1000)
 
   instance.notify(
-    platform === 'win32'
-      ? {
-          title: 'DeepSeek Harness 通知探针',
-          message: '点击下方按钮验证通知交互；60 秒后自动结束。',
-          actions,
-          ...(appId.length === 0 ? {} : { appID: appId }),
-          id: 1,
-          duration: 'long',
-          silent: false,
-        }
-      : platform === 'darwin'
-        ? {
-            title: 'DeepSeek Harness 通知探针',
-            message: '点击下方按钮验证通知交互；60 秒后自动结束。',
-            actions,
-            sound: false,
-            timeout: Math.max(5, Math.min(seconds, 300)),
-            group: 'dsh-desktop-notify-probe',
-          }
-        : {
-            title: 'DeepSeek Harness 通知探针',
-            message: '点击下方按钮验证通知交互；60 秒后自动结束。',
-            actions,
-            'app-name': 'DeepSeek Harness',
-            timeout: Math.max(5, Math.min(seconds, 300)),
-          },
+    {
+      title: 'DeepSeek Harness 通知探针',
+      message: '点击下方按钮验证通知交互；60 秒后自动结束。',
+      actions,
+      sound: false,
+      timeout: Math.max(5, Math.min(seconds, 300)),
+      group: 'dsh-desktop-notify-probe',
+    },
     (error, response, metadata) => {
       if (settled) return
       settled = true

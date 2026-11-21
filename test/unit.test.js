@@ -5,10 +5,14 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 import { normalizeConfig } from '../lib/normalize.js'
+import { DedupeWindow, questionDedupeKey, recentlyErrored } from '../lib/dedupe.js'
+import { Diagnostics } from '../lib/diagnostics.js'
 import { Presence } from '../lib/presence.js'
 import { isRootSession } from '../lib/session.js'
+import { UnreadTracker } from '../lib/unread.js'
 import {
   formatApproval,
+  formatDuration,
   formatPtcQuestion,
   formatTurnEnd,
   labelsFor,
@@ -17,15 +21,18 @@ import {
   resolveLocale,
   truncate,
 } from '../lib/messages.js'
+import { plainSummary } from '../lib/summary.js'
+import { TurnCache } from '../lib/turns.js'
 import {
-  buildLinuxOptions,
   buildMacOptions,
   buildWindowsOptions,
   mapOutcome,
+  Notifier,
   sanitizeActions,
 } from '../lib/notifier.js'
 import {
   buildPlayerCandidates,
+  SoundPlayer,
   toastSoundOptions,
   validateSoundFile,
 } from '../lib/sound.js'
@@ -186,7 +193,20 @@ test('mapOutcome resolves macOS action metadata', () => {
   assert.equal(mapOutcome(actions, undefined, { activationType: 'closed' }).reason, 'dismissed')
 })
 
-test('mapOutcome resolves Linux activation values', () => {
+test('Notifier refuses platforms other than macOS', async () => {
+  const notifier = new Notifier({
+    platform: 'freebsd',
+    config: normalizeConfig({}),
+    logger: () => {},
+  })
+  const capabilities = await notifier.capabilities()
+  assert.equal(capabilities.available, false)
+  assert.match(capabilities.error, /Windows and macOS/u)
+  const outcome = await notifier.show({ title: 'x', body: 'y' })
+  assert.equal(outcome.reason, 'error')
+})
+
+test('mapOutcome resolves label activation values', () => {
   const actions = [{ id: 'reject', label: '拒绝' }, { id: 'allow-once', label: '允许一次' }]
   assert.equal(mapOutcome(actions, '允许一次', { activationValue: '允许一次' }).actionId, 'allow-once')
   assert.equal(mapOutcome(actions, '拒绝', { activationType: 'click' }).actionId, 'reject')
@@ -202,7 +222,6 @@ test('platform option builders carry actions, sound, and identity', () => {
     group: 'group-7',
     appId: 'com.deepseek.dsh',
     duration: 'long',
-    iconPath: '/icon.svg',
     soundMode: 'bundled',
     systemName: '',
     timeoutSeconds: 30,
@@ -218,11 +237,6 @@ test('platform option builders carry actions, sound, and identity', () => {
   assert.equal(mac.timeout, 30)
   assert.deepEqual(mac.actions, ['Reject', 'Allow once'])
 
-  const linux = buildLinuxOptions(base)
-  assert.equal(linux['app-name'], 'DeepSeek Harness')
-  assert.equal(linux.timeout, 30)
-  assert.deepEqual(linux.actions, ['Reject', 'Allow once'])
-
   const windowsSystem = buildWindowsOptions({ ...base, soundMode: 'system' })
   assert.equal(windowsSystem.sound, 'Notification.Default')
   assert.equal(windowsSystem.silent, undefined)
@@ -235,7 +249,6 @@ test('toastSoundOptions honors platform sound rules', () => {
   assert.deepEqual(toastSoundOptions('darwin', 'system', 'Ping'), { sound: 'Ping' })
   assert.deepEqual(toastSoundOptions('darwin', 'system', 'Unknown'), { sound: true })
   assert.deepEqual(toastSoundOptions('darwin', 'bundled', ''), { sound: false })
-  assert.deepEqual(toastSoundOptions('linux', 'custom', ''), {})
 })
 
 test('validateSoundFile accepts the bundled wav and rejects missing paths', () => {
@@ -257,16 +270,13 @@ test('both bundled cues are valid RIFF/WAVE files', () => {
   }
 })
 
-test('buildPlayerCandidates follows platform players', () => {
+test('buildPlayerCandidates supports only Windows and macOS', () => {
   const windows = buildPlayerCandidates('win32', ASSET, PS1, 'powershell.exe')
   assert.equal(windows[0].command, 'powershell.exe')
   assert.ok(windows[0].args.includes(PS1))
 
   assert.equal(buildPlayerCandidates('darwin', ASSET, PS1)[0].command, 'afplay')
-  assert.deepEqual(
-    buildPlayerCandidates('linux', ASSET, PS1).map((candidate) => candidate.command),
-    ['paplay', 'canberra-gtk-play', 'aplay'],
-  )
+  assert.deepEqual(buildPlayerCandidates('freebsd', ASSET, PS1), [])
 })
 
 test('normalizeConfig fills defaults and clamps ranges', () => {
@@ -392,5 +402,178 @@ test('formatPtcQuestion reads tool arguments from an object or JSON text', () =>
   assert.equal(parseToolArguments('{"a":1}')?.a, 1)
   assert.equal(parseToolArguments('nope'), undefined)
   assert.equal(parseToolArguments(undefined), undefined)
+})
+
+test('questionDedupeKey scopes the same prompt by session and text', () => {
+  const a = questionDedupeKey('session-a', 'Deploy to staging?')
+  assert.equal(a, 'session-a:Deploy to staging?')
+  assert.notEqual(a, questionDedupeKey('session-b', 'Deploy to staging?'))
+  assert.notEqual(a, questionDedupeKey('session-a', 'Deploy to production?'))
+  assert.equal(questionDedupeKey(undefined, '  spaced   question  '), 'unknown:spaced question')
+  assert.equal(questionDedupeKey('s', ''), 's:')
+})
+
+test('DedupeWindow claims a key once per window and forgets it after', () => {
+  const window = new DedupeWindow(5000)
+  assert.equal(window.claim('k', 1000), true)
+  assert.equal(window.claim('k', 2000), false)
+  assert.equal(window.claim('other', 2000), true)
+  assert.equal(window.claim('k', 7000), true)
+  window.clear()
+  assert.equal(window.claim('k', 7001), true)
+
+  const bounded = new DedupeWindow(5000, 2)
+  assert.equal(bounded.claim('a', 1), true)
+  assert.equal(bounded.claim('b', 2), true)
+  assert.equal(bounded.claim('c', 3), true)
+  assert.equal(bounded.claim('a', 4), true, 'the oldest key is pruned at the cap')
+})
+
+test('recentlyErrored only suppresses inside the window', () => {
+  assert.equal(recentlyErrored(1000, 4000), true)
+  assert.equal(recentlyErrored(1000, 7000), false)
+  assert.equal(recentlyErrored(undefined, 4000), false)
+  assert.equal(recentlyErrored('bad', 4000), false)
+})
+
+test('UnreadTracker counts distinct sessions and caps the set', () => {
+  const unread = new UnreadTracker(2)
+  unread.mark('a', 1)
+  unread.mark('a', 2)
+  assert.equal(unread.size, 1)
+  unread.mark('b', 3)
+  assert.equal(unread.size, 2)
+  unread.mark('c', 4)
+  assert.equal(unread.size, 2)
+  assert.deepEqual(unread.snapshot().sessions.sort(), ['b', 'c'])
+  unread.remove('b')
+  assert.equal(unread.size, 1)
+  unread.clear()
+  assert.equal(unread.size, 0)
+})
+
+test('Presence waitForPresent resolves on focus and can be cancelled', async () => {
+  const presence = new Presence(1000)
+  const waiter = presence.waitForPresent()
+  const resolved = waiter.promise.then(() => true)
+  presence.update({ clientId: 'a', focused: true, locale: 'en' }, 1000)
+  assert.equal(await resolved, true)
+
+  const second = new Presence(1000)
+  let cancelledResolved = false
+  const tracked = second.waitForPresent()
+  void tracked.promise.then(() => {
+    cancelledResolved = true
+  })
+  tracked.cancel()
+  second.update({ clientId: 'b', focused: true, locale: 'zh' }, 1000)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(cancelledResolved, false)
+  assert.equal(second.isPresent(1000), true)
+})
+
+test('plainSummary flattens markdown and bounds the line', () => {
+  const out = plainSummary('# Title\n\n**bold** [link](https://example.com) `code`\n```js\nx\n```\n- item', 60)
+  assert.doesNotMatch(out, /\*\*/u)
+  assert.doesNotMatch(out, /```/u)
+  assert.doesNotMatch(out, /https:\/\//u)
+  assert.match(out, /bold link code/iu)
+  assert.equal(plainSummary('short'), 'short')
+  assert.equal(plainSummary(''), '')
+  assert.equal(plainSummary(undefined), '')
+  const long = plainSummary('alpha beta gamma delta epsilon zeta eta theta', 20)
+  assert.ok(long.length <= 20)
+  assert.ok(long.endsWith('…'))
+  assert.ok(!long.endsWith(' …'))
+})
+
+test('TurnCache folds turn start, assistant text, and turn end', () => {
+  const cache = new TurnCache()
+  cache.observe({ id: 's1' }, { type: 'turn/start', data: { turn: 2 }, time: 1000 })
+  cache.observe({ id: 's1' }, {
+    type: 'assistant/message',
+    data: { message: { content: [{ type: 'text', text: 'Hello ' }, { type: 'text', text: 'world' }] } },
+    time: 1100,
+  })
+  cache.observe({ id: 's1' }, { type: 'turn/end', data: { reason: { kind: 'blocked' } }, time: 1200 })
+  const snapshot = cache.take('s1', 1300)
+  assert.equal(snapshot.reason, 'blocked')
+  assert.equal(snapshot.text, 'Hello world')
+  assert.equal(snapshot.turn, 2)
+  assert.equal(cache.take('s1', 12_000), undefined)
+  assert.equal(cache.take('missing', 1300), undefined)
+  cache.delete('s1')
+  assert.equal(cache.take('s1', 1300), undefined)
+})
+
+test('TurnCache resets the reply on a new turn and keeps a bounded size', () => {
+  const cache = new TurnCache()
+  cache.observe({ id: 's' }, { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'old' }] } }, time: 1 })
+  cache.observe({ id: 's' }, { type: 'turn/end', data: { reason: { kind: 'completed' } }, time: 2 })
+  cache.observe({ id: 's' }, { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'new' }] } }, time: 3 })
+  assert.equal(cache.take('s', 4).text, 'new', 'a fresh assistant message clears the previous turn')
+  for (let index = 0; index < 80; index += 1) {
+    cache.observe({ id: `s${index}` }, { type: 'turn/end', data: { reason: { kind: 'completed' } }, time: 10 })
+  }
+  assert.ok(cache.size <= 64)
+})
+
+test('formatTurnEnd distinguishes every end reason and keeps the fallback', () => {
+  const agent = { session: { header: { cwd: 'C:/work/project' } } }
+  const blocked = formatTurnEnd(agent, 'en', 'Login fix', { reason: 'blocked' })
+  assert.match(blocked.body, /Login fix/u)
+  assert.match(blocked.body, /blocked/u)
+  assert.match(formatTurnEnd(agent, 'en', 'x', { reason: 'max-tokens' }).body, /Output limit/u)
+  assert.match(formatTurnEnd(agent, 'en', 'x', { reason: 'aborted' }).body, /aborted/u)
+  assert.match(formatTurnEnd(agent, 'en', 'x', { reason: 'interrupted' }).body, /interrupted/u)
+  assert.match(formatTurnEnd(agent, 'en', 'x', { reason: 'error' }).body, /failed/u)
+  assert.match(formatTurnEnd(agent, 'en', 'x', { reason: 'forked' }).body, /ended/u)
+  assert.match(formatTurnEnd(agent, 'zh', '修复登录', { reason: 'max-tokens' }).body, /输出达到上限/u)
+
+  const completed = formatTurnEnd(agent, 'en', 'Login fix', {
+    reason: 'completed',
+    text: '**Done** now',
+    durationSeconds: 83,
+  })
+  assert.match(completed.body, /Login fix/u)
+  assert.match(completed.body, /Done now/u)
+  assert.match(completed.body, /1m23s/u)
+
+  assert.equal(formatTurnEnd(agent, 'en', 'My session').body, 'My session')
+  assert.equal(formatTurnEnd(agent, 'en').body, 'project')
+  const long = formatTurnEnd(agent, 'en', 'x'.repeat(120), {
+    reason: 'completed',
+    text: 'y'.repeat(400),
+  })
+  assert.ok(long.body.length <= 120)
+})
+
+test('formatDuration localizes and drops sub-second values', () => {
+  assert.equal(formatDuration(83, 'en'), '1m23s')
+  assert.equal(formatDuration(83, 'zh'), '1 分 23 秒')
+  assert.equal(formatDuration(5, 'en'), '5s')
+  assert.equal(formatDuration(0, 'en'), '')
+  assert.equal(formatDuration(undefined, 'en'), '')
+  assert.equal(formatDuration(Number.NaN, 'en'), '')
+})
+
+test('Diagnostics keeps a bounded newest window', () => {
+  const diagnostics = new Diagnostics(3)
+  for (let index = 0; index < 5; index += 1) diagnostics.note(`line ${index}`, 0)
+  assert.equal(diagnostics.size, 3)
+  const snapshot = diagnostics.snapshot()
+  assert.equal(snapshot.length, 3)
+  assert.match(snapshot[0], /line 2/u)
+  assert.match(snapshot[2], /line 4/u)
+  diagnostics.note('   ', 0)
+  assert.equal(diagnostics.size, 3)
+  diagnostics.clear()
+  assert.equal(diagnostics.size, 0)
+})
+
+test('SoundPlayer stopAll is safe with nothing playing', () => {
+  const player = new SoundPlayer({ platform: 'darwin', bundledFile: ASSET, ps1Path: PS1 })
+  assert.equal(player.playing, 0)
+  assert.equal(player.stopAll(), 0)
 })
 

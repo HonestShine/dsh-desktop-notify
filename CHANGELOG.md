@@ -5,6 +5,38 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.3] - 2026-11-21
+
+### 新增
+
+- **结束原因与回复摘要**：监听 `session/event` 的 `turn/end` 与 `assistant/message`，任务完成提醒区分 `completed` / `blocked` / `max-tokens` / `aborted` / `interrupted` / `error`；完成类提醒附带最后一条回复的扁平化摘要（≤110 字）与用时。`session/event` 不可用时自动回退到 0.2.1 的通用文案。
+- **诊断面**：新增 40 条有界决策环；`GET /desktop-notify/debug` 返回状态、决策记录、turn 缓存、未读集合与在播音效数；`POST /desktop-notify/report` 供客户端上报；`POST /desktop-notify/silence` 立即停止在播音效。
+- **音效治理**：`SoundPlayer` 登记在播子进程，8 秒封顶；回窗、禁用、静音模式下立即停止；插件卸载时清理。
+- **点击宽限**：审批超时后保留 400ms 宽限，超时边界上的按钮点击仍会被接收，不再被丢弃。
+- **Windows 身份预热**：启动 1.5 秒后后台解析 AUMID 与协议，降低首次审批通知的冷启动延迟。
+
+### 变更
+
+- **未读改为会话级**：角标数字表示「有未处理提醒的会话数」，同一会话多条提醒只计 1；设置页的测试通知不再计入角标。
+- **提问去重**：从 2 秒全局时间槽改为「会话 + 问题摘要前 40 字」的 5 秒窗口；两个会话并发提问不再互相吞掉，同一提问的瀑布/PTC 双源仍只提醒一次。
+- **回窗竞速**：审批始终参与 `whenPresent()` 竞速，并新增可取消 waiter；无 live client 时打开窗口也能撤回通知。
+- **按需轮询**：Windows rendezvous 目录只在存在待处理按钮时每 300ms 轮询，空闲时停止；角标只在窗口隐藏/失焦时每 5 秒同步，聚焦时本地清除并停止请求。
+- **文案预算**：标题 48 字、正文 120 字，减少 Windows toast 在系统侧被截断。
+
+### 修复
+
+- **错误后重复完成**：`agent/error` 后 5 秒内的 `idle` 不再补一条「回复完成」；`agentErrorAt` 从只写不读改为真正参与门控。
+- **测试通知污染角标**：测试通知不再增加未读计数，设置页仍通过 `lastOutcome.test` 展示结果。
+- **会话销毁清理**：`agent/disposed` 同时清理 turn 缓存、计时与未读条目。
+
+### 兼容性
+
+- **平台收敛**：仅支持 DeepSeek Harness 桌面端的 Windows 与 macOS；移除 Linux 的 `notify-send` / `paplay` / `canberra-gtk-play` / `aplay` 代码路径与文档，非 Windows/macOS 平台返回「不支持」。DSH Web 端不作为目标。
+- 0.2.3 之前的版本曾包含 Linux 分支，自 0.2.3 起不再维护。
+- 无新增运行时依赖，仍为纯 ESM JavaScript；Node 范围不变。
+- 若 Host 未把 `session/event` 转发给插件，结束原因缓存为空，提醒退回 0.2.1 的文案与行为。
+- 配置变更仍会重载 Host 插件（见 README「已知限制」）；改动设置时若有审批正在进行，通知会被关闭并回退面板。
+
 ## [0.2.2] - 2026-11-21
 
 ### 新增

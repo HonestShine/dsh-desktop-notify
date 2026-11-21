@@ -2,19 +2,27 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { Service } from '@deepseek-ai/cordis'
 import { Config as ConfigSchema, normalizeConfig } from './lib/config.js'
-import { formatApproval, formatError, formatPtcQuestion, formatQuestion, formatTurnEnd, labelsFor, resolveLocale } from './lib/messages.js'
+import { DedupeWindow, questionDedupeKey, recentlyErrored } from './lib/dedupe.js'
+import { Diagnostics } from './lib/diagnostics.js'
+import { formatApproval, formatError, formatPtcQuestion, formatQuestion, formatTurnEnd, labelsFor, parseToolArguments, resolveLocale } from './lib/messages.js'
 import { Notifier, sanitizeActions } from './lib/notifier.js'
 import { Presence } from './lib/presence.js'
 import { installRoutes } from './lib/routes.js'
 import { isRootSession } from './lib/session.js'
 import { SoundPlayer } from './lib/sound.js'
+import { TurnCache } from './lib/turns.js'
+import { UnreadTracker } from './lib/unread.js'
 import { WinRtNotifier } from './lib/winrt.js'
 
 const PLUGIN_DIR = fileURLToPath(new URL('.', import.meta.url))
-const ICON_PATH = fileURLToPath(new URL('./icon.svg', import.meta.url))
 const BUNDLED_SOUND = fileURLToPath(new URL('./assets/notify.wav', import.meta.url))
 const BUNDLED_ALERT = fileURLToPath(new URL('./assets/alert.wav', import.meta.url))
 const PLAY_SCRIPT = fileURLToPath(new URL('./assets/play-wav.ps1', import.meta.url))
+
+/** One question prompt may arrive from the waterfall and from PTC; collapse it for this long. */
+const QUESTION_DEDUPE_MS = 5000
+/** An idle event this soon after `agent/error` is the same turn, not a completion. */
+const ERROR_SUPPRESS_MS = 5000
 
 /** Defer to the in-app approval panel. */
 const DELEGATE = Symbol('delegate')
@@ -30,8 +38,14 @@ export default class DesktopNotifyService extends Service {
   constructor(ctx, config) {
     super(ctx, 'desktopNotify')
     this.config = normalizeConfig(config)
+    this.diagnostics = new Diagnostics()
     const sink = ctx.logger?.('desktop-notify')
     this.log = (message, level = 'info') => {
+      try {
+        this.diagnostics.note(message)
+      } catch {
+        // The ring is a debugging aid; never let it break a notification.
+      }
       try {
         if (typeof sink?.[level] === 'function') {
           sink[level](message)
@@ -45,6 +59,9 @@ export default class DesktopNotifyService extends Service {
       else console.info(`[desktop-notify] ${message}`)
     }
     this.presence = new Presence(this.config.presence.staleSeconds * 1000)
+    if (process.platform !== 'win32' && process.platform !== 'darwin') {
+      this.log('desktop notifications support only Windows and macOS; notifications are disabled on this platform', 'warn')
+    }
     this.notifier = process.platform === 'win32'
       ? new WinRtNotifier({
           appId: this.config.windows.appId,
@@ -57,7 +74,6 @@ export default class DesktopNotifyService extends Service {
       : new Notifier({
           platform: process.platform,
           config: this.config,
-          iconPath: ICON_PATH,
           logger: (message) => this.log(message, 'warn'),
         })
     this.sound = new SoundPlayer({
@@ -75,6 +91,14 @@ export default class DesktopNotifyService extends Service {
       ps1Path: PLAY_SCRIPT,
       logger: (message) => this.log(message, 'warn'),
     })
+    // Resolve the Windows toast identity in the background so the first real
+    // approval does not pay the shortcut + AUMID probe latency.
+    if (process.platform === 'win32' && this.config.enabled && typeof this.notifier.warmup === 'function') {
+      this.warmupTimer = setTimeout(() => {
+        void this.notifier.warmup()
+      }, 1500)
+      this.warmupTimer.unref?.()
+    }
     this.lastCueAt = 0
     /** @type {{ reason: string, actionId?: string, label?: string, at: number, test?: boolean } | undefined} */
     this.lastOutcome = undefined
@@ -84,6 +108,14 @@ export default class DesktopNotifyService extends Service {
     this.agentStatus = new Map()
     /** @type {Map<string, number>} */
     this.agentErrorAt = new Map()
+    /** Session-scoped unread set; the badge mirrors its size. */
+    this.unreadSessions = new UnreadTracker()
+    /** Cross-source question dedupe, scoped by session + question text. */
+    this.questions = new DedupeWindow(QUESTION_DEDUPE_MS)
+    /** Best-effort turn-end context from the committed session events. */
+    this.turns = new TurnCache()
+    /** Agent id -> wall clock when the current turn was first seen running. */
+    this.turnStartedAt = new Map()
     this.disposed = false
 
     ctx.effect(() => () => this.#dispose(), 'desktop-notify: lifecycle')
@@ -109,6 +141,7 @@ export default class DesktopNotifyService extends Service {
     const notifier = await this.notifier.capabilities()
     return {
       platform: process.platform,
+      supported: process.platform === 'win32' || process.platform === 'darwin',
       enabled: this.config.enabled,
       notifier,
       sound: {
@@ -158,7 +191,7 @@ export default class DesktopNotifyService extends Service {
     const focused = report?.focused === true
     this.presence.update(report)
     // Focusing the window means the user is looking again, so the badge clears.
-    if (focused) this.unread = 0
+    if (focused) this.unreadSessions.clear()
   }
 
   /**
@@ -178,10 +211,9 @@ export default class DesktopNotifyService extends Service {
       timeoutSeconds: 60,
     }).then((outcome) => {
       this.lastOutcome = { ...outcome, at: Date.now(), test: true }
-      // A test notification is also something the user has not acknowledged,
-      // so it counts toward the badge; otherwise the badge cannot be verified
-      // end to end from the settings page.
-      if (outcome?.reason !== 'error') this.unread += 1
+      // A test toast is not a session waiting for an answer, so it must not
+      // inflate the badge. The settings page still shows its outcome through
+      // `lastOutcome.test`.
     }).catch((error) => {
       this.lastOutcome = {
         reason: 'error',
@@ -224,23 +256,82 @@ export default class DesktopNotifyService extends Service {
     return result.ok ? { ok: true } : { ok: false, code: 'sound-failed', message: result.error }
   }
 
+  /**
+   * Append one client-side diagnostic line. Kept on the service so `/report`
+   * stays a thin route.
+   * @param {unknown} line - Client message.
+   * @returns {{ ok: boolean }}
+   */
+  report(line) {
+    const text = typeof line === 'string' ? line.trim() : ''
+    if (text.length === 0) return { ok: false }
+    this.diagnostics.note(`client: ${text.slice(0, 500)}`)
+    return { ok: true }
+  }
+
+  /**
+   * Stop every sound that is still playing. Called when the window regains
+   * focus, when the plugin is disposed, and by the settings page.
+   * @returns {{ ok: boolean, stopped: number }}
+   */
+  silence() {
+    const stopped = this.sound.stopAll() + this.attentionSound.stopAll()
+    if (stopped > 0) this.diagnostics.note(`silence: stopped ${stopped} sound(s)`)
+    return { ok: true, stopped }
+  }
+
+  /**
+   * Diagnostics snapshot for `GET /desktop-notify/debug`: the ordinary status
+   * plus the decision ring and the small in-memory caches.
+   * @returns {Promise<object>}
+   */
+  async debugReport() {
+    const status = await this.status()
+    return {
+      ...status,
+      diagnostics: this.diagnostics.snapshot(),
+      turns: { cached: this.turns.size, running: this.turnStartedAt.size },
+      unreadSessions: this.unreadSessions.snapshot(),
+      sounds: {
+        notification: { playing: this.sound.playing },
+        attention: { playing: this.attentionSound.playing },
+      },
+    }
+  }
+
   /* ------------------------------------------------------------------ */
   /* Listener wiring                                                      */
   /* ------------------------------------------------------------------ */
 
   #installListeners() {
     const ctx = this.ctx
+    // Read-only fold of the committed event stream. It gives the turn reminder
+    // the real end reason and the last reply text; when the event is not
+    // forwarded to this plugin the cache stays empty and `formatTurnEnd` falls
+    // back to the old generic copy.
+    ctx.on('session/event', (session, event) => {
+      try {
+        this.turns.observe(session, event)
+      } catch (error) {
+        this.log(`turn context fold failed: ${messageOf(error)}`, 'warn')
+      }
+    })
     ctx.on('approval/request', (request, next) => this.#handleApproval(request, next), {
       prepend: true,
       global: true,
     })
     ctx.on('user-questions/request', (request, next) => {
-      if (!this.#takeQuestionSlot()) return next()
+      const sessionKey = this.#sessionKey(request?.agent)
+      const key = questionDedupeKey(sessionKey, firstQuestionText(request))
+      if (!this.questions.claim(key)) {
+        this.diagnostics.note(`suppressed question: duplicate ${key}`)
+        return next()
+      }
       const cued = this.#cueAttention()
       if (this.#shouldRemind('question')) {
         try {
           const copy = formatQuestion(request, this.#locale(), this.#sessionTitleOf(request?.agent))
-          void this.#remind(copy, { sound: !cued, silent: cued })
+          void this.#remind(copy, { sound: !cued, silent: cued, key: sessionKey })
         } catch (error) {
           this.log(`question reminder failed: ${messageOf(error)}`, 'warn')
         }
@@ -252,11 +343,17 @@ export default class DesktopNotifyService extends Service {
     const onProgrammaticQuestion = (payload) => {
       try {
         if (payload?.name !== 'ask_user_question') return
-        if (!this.#takeQuestionSlot()) return
+        const sessionKey = this.#sessionKey(payload?.agent)
+        const args = parseToolArguments(payload?.arguments ?? payload?.args)
+        const key = questionDedupeKey(sessionKey, firstQuestionText(args))
+        if (!this.questions.claim(key)) {
+          this.diagnostics.note(`suppressed ptc question: duplicate ${key}`)
+          return
+        }
         const cued = this.#cueAttention()
         if (!this.#shouldRemind('question')) return
         const copy = formatPtcQuestion(payload, this.#locale(), this.#sessionTitleOf(payload?.agent))
-        void this.#remind(copy, { sound: !cued, silent: cued })
+        void this.#remind(copy, { sound: !cued, silent: cued, key: sessionKey })
       } catch (error) {
         this.log(`programmatic question reminder failed: ${messageOf(error)}`, 'warn')
       }
@@ -269,11 +366,33 @@ export default class DesktopNotifyService extends Service {
         if (agent === undefined || typeof agent.id !== 'string') return
         const status = payload.status
         const previous = this.agentStatus.get(agent.id)
+        const erroredAt = this.agentErrorAt.get(agent.id)
         this.agentStatus.set(agent.id, status)
+        if (status === 'running') {
+          this.agentErrorAt.delete(agent.id)
+          if (!this.turnStartedAt.has(agent.id)) this.turnStartedAt.set(agent.id, Date.now())
+        }
+        const startedAt = status === 'idle' ? this.turnStartedAt.get(agent.id) : undefined
+        if (status === 'idle') this.turnStartedAt.delete(agent.id)
         if (status !== 'idle' || previous !== 'running') return
         if (!isRootSession(agent)) return
+        // An error already produced its own toast; the idle that follows is the
+        // same turn, not a second completion.
+        if (recentlyErrored(erroredAt, Date.now(), ERROR_SUPPRESS_MS)) {
+          this.agentErrorAt.delete(agent.id)
+          return
+        }
         if (!this.#shouldRemind('turnEnd')) return
-        return this.#remind(formatTurnEnd(agent, this.#locale(), this.#sessionTitleOf(agent)))
+        const turn = this.turns.take(agent?.session?.id)
+        const durationSeconds = startedAt === undefined ? undefined : (Date.now() - startedAt) / 1000
+        return this.#remind(
+          formatTurnEnd(agent, this.#locale(), this.#sessionTitleOf(agent), {
+            reason: turn?.reason,
+            text: turn?.text,
+            durationSeconds,
+          }),
+          { key: this.#sessionKey(agent) },
+        )
       } catch (error) {
         this.log(`turn reminder failed: ${messageOf(error)}`, 'warn')
       }
@@ -285,21 +404,31 @@ export default class DesktopNotifyService extends Service {
         if (agent === undefined || typeof agent.id !== 'string') return
         if (!isRootSession(agent)) return
         const now = Date.now()
-        this.agentErrorAt.set(agent.id, now)
         const copy = formatError(payload, this.#locale(), this.#sessionTitleOf(agent))
         const signature = `${agent.id}:${copy.title}:${copy.body}`
-        if (this.#recentlySent(signature, now)) return
+        if (this.#recentlySent(signature, now)) {
+          // The same failure was already announced; still suppress the idle
+          // that follows it, because that turn is not a completion.
+          this.agentErrorAt.set(agent.id, now)
+          return
+        }
         if (!this.#shouldRemind('errors')) return
-        void this.#remind(copy)
+        this.agentErrorAt.set(agent.id, now)
+        void this.#remind(copy, { key: this.#sessionKey(agent) })
       } catch (error) {
         this.log(`error reminder failed: ${messageOf(error)}`, 'warn')
       }
     }, { global: true })
     ctx.on('agent/disposed', (payload) => {
-      const id = payload?.agent?.id
+      const agent = payload?.agent
+      const id = agent?.id
       if (typeof id === 'string') {
         this.agentStatus.delete(id)
         this.agentErrorAt.delete(id)
+        this.turnStartedAt.delete(id)
+        const sessionId = agent?.session?.id
+        this.turns.delete(typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : id)
+        this.unreadSessions.remove(this.#sessionKey(agent))
       }
     }, { global: true })
   }
@@ -311,17 +440,34 @@ export default class DesktopNotifyService extends Service {
    * @returns {Promise<string>} Approval outcome.
    */
   async #handleApproval(request, next) {
+    let focus
     try {
-      if (!this.config.enabled) return await safeNext(next)
+      if (!this.config.enabled) {
+        this.diagnostics.note('suppressed approval: plugin disabled')
+        return await safeNext(next)
+      }
       const cued = this.#cueAttention()
-      if (!this.config.approval.enabled) return await safeNext(next)
-      if (this.pendingApproval !== undefined) return await safeNext(next)
-      if (this.config.approval.onlyWhenHidden && this.presence.isPresent()) return await safeNext(next)
+      if (!this.config.approval.enabled) {
+        this.diagnostics.note('suppressed approval: switch off')
+        return await safeNext(next)
+      }
+      if (this.pendingApproval !== undefined) {
+        this.diagnostics.note('suppressed approval: another approval is pending')
+        return await safeNext(next)
+      }
+      if (this.config.approval.onlyWhenHidden && this.presence.isPresent()) {
+        this.diagnostics.note('suppressed approval: window present')
+        return await safeNext(next)
+      }
       const locale = this.#locale()
       const copy = formatApproval(request, locale, this.#sessionTitleOf(request?.agent))
       const actions = sanitizeApprovalActions(copy.actions)
-      if (actions.length !== 2) return await safeNext(next)
+      if (actions.length !== 2) {
+        this.diagnostics.note('suppressed approval: action labels are not usable')
+        return await safeNext(next)
+      }
       const hasClient = this.#hasLiveClient()
+      if (!hasClient) this.diagnostics.note('approval: no live client; timeout extended')
       const timeoutMs = this.config.approval.timeoutSeconds * 1000
       const effectiveTimeoutMs = hasClient ? timeoutMs : Math.max(timeoutMs, 120_000)
       const pending = {
@@ -348,7 +494,12 @@ export default class DesktopNotifyService extends Service {
         },
       })
       const racers = [shown.then((outcome) => ({ kind: 'notify', outcome }))]
-      if (hasClient) racers.push(this.presence.whenPresent().then(() => ({ kind: 'focus' })))
+      // Always race the focus signal. The previous gate skipped it when the
+      // gateway reported no live client, which meant a window opened *after* the
+      // toast appeared could never withdraw it. The waiter is cancelled below,
+      // so an approval that ends by timeout or action leaves nothing behind.
+      focus = this.presence.waitForPresent()
+      racers.push(focus.promise.then(() => ({ kind: 'focus' })))
       if (request?.signal !== undefined) {
         racers.push(new Promise((resolve) => {
           if (request.signal.aborted) resolve({ kind: 'abort' })
@@ -383,6 +534,7 @@ export default class DesktopNotifyService extends Service {
       this.log(`approval takeover failed: ${messageOf(error)}`, 'warn')
       return 'unavailable'
     } finally {
+      focus?.cancel?.()
       this.pendingApproval = undefined
     }
   }
@@ -399,22 +551,27 @@ export default class DesktopNotifyService extends Service {
    */
   #shouldRemind(key) {
     if (!this.config.enabled) return false
-    if (this.config.events[key] !== true) return false
-    if (this.config.events.onlyWhenHidden && this.presence.isPresent()) return false
+    if (this.config.events[key] !== true) {
+      this.diagnostics.note(`suppressed ${key}: switch off`)
+      return false
+    }
+    if (this.config.events.onlyWhenHidden && this.presence.isPresent()) {
+      this.diagnostics.note(`suppressed ${key}: window present`)
+      return false
+    }
     return true
   }
 
   /**
-   * Claim the single reminder slot for one question prompt. The waterfall and
-   * the programmatic tool dispatch can describe the same prompt; whichever
-   * arrives first announces it and the other is suppressed.
-   * @returns {boolean} True when this prompt should be announced.
+   * The identity used for session-scoped unread tracking. Prefers the Session
+   * id, because one agent can survive across turns; falls back to the Agent id.
+   * @param {object | undefined} agent - Live Agent.
+   * @returns {string} Stable key, or an empty string when neither id exists.
    */
-  #takeQuestionSlot() {
-    const now = Date.now()
-    if (now - this.#questionAnnouncedAt < 2000) return false
-    this.#questionAnnouncedAt = now
-    return true
+  #sessionKey(agent) {
+    const sessionId = agent?.session?.id
+    if (typeof sessionId === 'string' && sessionId.length > 0) return sessionId
+    return typeof agent?.id === 'string' ? agent.id : ''
   }
 
   /**
@@ -437,7 +594,7 @@ export default class DesktopNotifyService extends Service {
   /**
    * Show a non-interactive reminder and play the configured sound.
    * @param {{ title: string, body: string }} copy - Notification copy.
-   * @param {{ sound?: boolean, silent?: boolean }} [options] - A cue already played for this prompt.
+   * @param {{ sound?: boolean, silent?: boolean, key?: string }} [options] - Key scopes the unread entry.
    * @returns {Promise<void>}
    */
   async #remind(copy, options = {}) {
@@ -452,7 +609,7 @@ export default class DesktopNotifyService extends Service {
       // rejecting; ignoring that shape is what made a broken toast look
       // successful. Record it so the settings page can show the last failure.
       if (outcome?.reason !== 'error') {
-        this.unread += 1
+        this.unreadSessions.mark(options.key)
         return
       }
       const detail = String(outcome.error ?? 'unknown error')
@@ -475,10 +632,10 @@ export default class DesktopNotifyService extends Service {
 
   #recent = new Map()
 
-  #questionAnnouncedAt = 0
-
-  /** Reminders raised since the window was last focused; mirrored to the badge. */
-  unread = 0
+  /** Distinct sessions with unread reminders; the badge mirrors this count. */
+  get unread() {
+    return this.unreadSessions.size
+  }
 
   #locale() {
     return this.presence.locale() ?? detectLocale()
@@ -509,14 +666,13 @@ export default class DesktopNotifyService extends Service {
   }
 
   #focusApp() {
+    if (process.platform !== 'win32' && process.platform !== 'darwin') return
     const url = 'dsh://open'
     const options = { stdio: 'ignore', windowsHide: true, detached: true }
     try {
       const child = process.platform === 'win32'
         ? spawn('cmd.exe', ['/c', 'start', '', url], options)
-        : process.platform === 'darwin'
-          ? spawn('open', [url], options)
-          : spawn('xdg-open', [url], options)
+        : spawn('open', [url], options)
       child.on('error', () => {})
       child.unref()
     } catch {
@@ -533,11 +689,14 @@ export default class DesktopNotifyService extends Service {
   #dispose() {
     if (this.disposed) return
     this.disposed = true
+    if (this.warmupTimer !== undefined) clearTimeout(this.warmupTimer)
     try {
       this.pendingApproval?.cancel?.()
     } catch {
       // The waterfall may already be unwound.
     }
+    this.sound.stopAll()
+    this.attentionSound.stopAll()
     this.notifier.clearAll()
     if (typeof this.notifier.unregisterProtocol === 'function') {
       void this.notifier.unregisterProtocol().then((result) => {
@@ -575,6 +734,20 @@ function detectLocale() {
 
 function messageOf(error) {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Read the first question text from a waterfall request or parsed PTC args.
+ * Used only as part of the dedupe key, so a missing text is fine.
+ * @param {unknown} value - Request, parsed arguments, or anything else.
+ * @returns {string}
+ */
+function firstQuestionText(value) {
+  const list = Array.isArray(value?.questions) ? value.questions : []
+  const first = list[0]
+  return first !== null && typeof first === 'object' && typeof first.question === 'string'
+    ? first.question
+    : ''
 }
 
 async function safeNext(next) {

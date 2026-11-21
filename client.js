@@ -27,7 +27,6 @@ window.__ModuleLoader__.load({
       presenceUnknown: '未上报',
       windowsIdentity: 'Windows 通知身份',
       macosIdentity: 'macOS 通知身份',
-      linuxIdentity: 'Linux 通知组件',
       sendTest: '发送测试通知',
       refresh: '刷新状态',
       testSent: '测试通知已发送，请在系统通知中点击按钮。',
@@ -67,7 +66,7 @@ window.__ModuleLoader__.load({
       soundCustom: '自定义音频文件',
       soundNone: '静音',
       soundFile: '自定义音频路径',
-      soundFileDesc: '绝对路径。Windows 仅支持 .wav；macOS/Linux 支持播放器可解码的格式。',
+      soundFileDesc: '绝对路径。Windows 仅支持 .wav；macOS 支持 afplay 可解码的格式。',
       soundFileApply: '应用路径',
       soundFileSaved: '路径已保存',
       soundFileInvalid: '路径无效或格式不受支持',
@@ -96,7 +95,6 @@ window.__ModuleLoader__.load({
       macosHelper: 'macOS 定制 notifier 路径',
       macosHelperDesc: '可选：指向自行构建的 terminal-notifier；留空使用内置版本。',
       macosCaveat: 'macOS 通知身份显示为 terminal-notifier（系统限制），按钮、声音与点击回传均可正常使用。',
-      linuxCaveat: 'Linux 需要 libnotify 0.7.10+ 且通知守护进程支持 actions；否则会退回应用内审批面板。',
       saved: '设置已保存',
       saveFailed: '保存失败',
       loading: '加载配置…',
@@ -124,7 +122,6 @@ window.__ModuleLoader__.load({
       presenceUnknown: 'not reported',
       windowsIdentity: 'Windows notification identity',
       macosIdentity: 'macOS notification identity',
-      linuxIdentity: 'Linux notifier',
       sendTest: 'Send test notification',
       refresh: 'Refresh status',
       testSent: 'Test notification sent. Click a button in the system notification.',
@@ -164,7 +161,7 @@ window.__ModuleLoader__.load({
       soundCustom: 'Custom audio file',
       soundNone: 'Silent',
       soundFile: 'Custom audio path',
-      soundFileDesc: 'Absolute path. Windows only supports .wav; macOS/Linux support formats the system player can decode.',
+      soundFileDesc: 'Absolute path. Windows only supports .wav; macOS supports formats afplay can decode.',
       soundFileApply: 'Apply path',
       soundFileSaved: 'Path saved',
       soundFileInvalid: 'The path is invalid or the format is unsupported',
@@ -193,7 +190,6 @@ window.__ModuleLoader__.load({
       macosHelper: 'macOS custom notifier path',
       macosHelperDesc: 'Optional: a self-built terminal-notifier; leave empty to use the bundled one.',
       macosCaveat: 'macOS shows notifications as terminal-notifier (system limitation); buttons, sound, and click callbacks still work.',
-      linuxCaveat: 'Linux needs libnotify 0.7.10+ and a notification daemon with actions; otherwise the in-app approval panel is used.',
       saved: 'Setting saved',
       saveFailed: 'Could not save setting',
       loading: 'Loading configuration…',
@@ -328,6 +324,7 @@ window.__ModuleLoader__.load({
       ctx.effect(() => {
         const onChange = () => {
           if (!document.hidden) lastActivity = Date.now()
+          if (!document.hidden && document.hasFocus()) silenceSounds()
           scheduleIdle()
           report()
         }
@@ -510,6 +507,20 @@ window.__ModuleLoader__.load({
       return payload ?? { ok: true }
     }
 
+    /** Stop any notification sound still playing (focus, or settings preview). */
+    function silenceSounds() {
+      void fetchJson(`${BASE}/silence`, { method: 'POST', body: {} }, true).catch(() => {})
+    }
+
+    /**
+     * Append one client-side diagnostic line to the Host ring. Best-effort:
+     * diagnostics must never break the UI.
+     * @param {string} line - Short reason.
+     */
+    function reportDiagnostic(line) {
+      void fetchJson(`${BASE}/report`, { method: 'POST', body: { line } }, true).catch(() => {})
+    }
+
     /* ------------------------------------------------------------------ */
     /* Settings section                                                    */
     /* ------------------------------------------------------------------ */
@@ -620,6 +631,7 @@ window.__ModuleLoader__.load({
         } catch (error) {
           setTestState('error')
           setTestOutcome(error instanceof Error ? error.message : String(error))
+          reportDiagnostic(`test notification failed: ${error instanceof Error ? error.message : String(error)}`)
           return
         }
         if (pollRef.current !== null) window.clearInterval(pollRef.current)
@@ -739,16 +751,6 @@ window.__ModuleLoader__.load({
                   type: 'button', className: 'dtn-btn', key: 'open',
                   onClick: () => { void props.openSystemSettings().catch(() => {}) },
                 }, t('openSettings'))),
-              ])
-            : null,
-          status?.platform === 'linux'
-            ? h('div', { className: 'dtn-row', key: 'linux' }, [
-                h('div', { key: 'label' }, [
-                  h('div', { className: 'dtn-row-title', key: 't' }, t('linuxIdentity')),
-                  h('div', { className: 'dtn-row-desc', key: 'd' }, status?.linux?.available
-                    ? `notify-send ${status.linux.version ?? ''} · ${status.linux.actions ? t('actionsSupported') : t('actionsUnsupported')}`
-                    : status?.linux?.error ?? t('linuxCaveat')),
-                ]),
               ])
             : null,
           testState !== 'idle'
@@ -1074,11 +1076,13 @@ function startBadgeSync() {
   let stopped = false
   let last = -1
   let timer
+  let reportedFailure = false
   const sync = async () => {
     if (stopped) return
     try {
       const status = await fetchJson(`${BASE}/status`, {}, true)
       const unread = Number(status?.unread ?? 0)
+      reportedFailure = false
       if (!Number.isFinite(unread) || unread === last) return
       last = unread
       if (unread > 0) {
@@ -1087,21 +1091,56 @@ function startBadgeSync() {
         await navigator.clearAppBadge()
       }
     } catch {
-      // A badge is cosmetic; a failed poll is not worth surfacing.
+      // A badge is cosmetic; a failed poll is not worth surfacing. Report it
+      // once so `/debug` can explain a badge that never appeared.
+      if (!reportedFailure) {
+        reportedFailure = true
+        reportDiagnostic('badge sync failed')
+      }
     }
   }
-  // Leaving the window is the moment the badge starts to matter; refreshing on
-  // the transition means the user sees it without waiting for the next poll.
-  const onVisibility = () => {
-    if (document.visibilityState === 'hidden') void sync()
+  // The badge only matters while the window is in the background. Polling while
+  // focused is redundant (the Host clears unread on a focused presence report)
+  // and costs one request every five seconds.
+  const shouldPoll = () => typeof document !== 'undefined'
+    && (document.visibilityState === 'hidden' || !document.hasFocus())
+  const stopPolling = () => {
+    if (timer === undefined) return
+    window.clearInterval(timer)
+    timer = undefined
   }
-  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
-  void sync()
-  timer = window.setInterval(() => { void sync() }, 5000)
+  const reconcile = () => {
+    if (stopped) return
+    if (!shouldPoll()) {
+      stopPolling()
+      // The Host clears unread on focus; mirror that locally without a request.
+      if (last > 0 && canClear) {
+        last = 0
+        try {
+          void navigator.clearAppBadge()
+        } catch {
+          // Ignore a renderer that revoked badge support mid-session.
+        }
+      }
+      return
+    }
+    if (timer === undefined) timer = window.setInterval(() => { void sync() }, 5000)
+    void sync()
+  }
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', reconcile)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', reconcile)
+    window.addEventListener('blur', reconcile)
+  }
+  reconcile()
   return () => {
     stopped = true
-    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
-    if (timer !== undefined) window.clearInterval(timer)
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', reconcile)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', reconcile)
+      window.removeEventListener('blur', reconcile)
+    }
+    stopPolling()
     try {
       if (canClear) void navigator.clearAppBadge()
     } catch {
