@@ -5,6 +5,18 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.4] - 2026-11-25
+
+### 移除
+
+- **未读角标与消息计数**：删除 Host 侧的未读集合、`/status` 的 `unread` / `badge` 字段、审批与提醒的未读记账，以及客户端 `setAppBadge` / `clearAppBadge` 同步和设置页「未读角标」分组。
+- **托盘适配预留**：删除 `window.dshDesktop.setAttention` 分支；插件不再尝试控制 DSH 核心托盘，也不做托盘闪烁。
+
+### 变更
+
+- 通知、审批 waterfall、`dshnotify:` 回传、音效、presence、诊断与平台逻辑保持不变。
+- README / 中文 README 不再宣传角标、托盘状态或消息计数。
+
 ## [0.2.3] - 2026-11-21
 
 ### 新增

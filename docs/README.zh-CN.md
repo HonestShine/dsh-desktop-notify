@@ -21,9 +21,8 @@ DeepSeek Harness 桌面端的原生通知插件：在系统通知里直接处理
 - **交互提示音**：权限确认与提问（含计划征询）触发时播放独立提示音，**与通知铃声分开配置**，且**不受窗口焦点限制**——窗口在前台也响；同样支持 `bundled` / `custom` / `none` 与试听。
 - **可复用服务**：Host 注册 `ctx.desktopNotify`，其他插件可调用 `show()` 弹出带按钮的通知。
 - **Windows 通知身份**：按顺序尝试候选——`windows.appId`（支持分号分隔多个）、环境变量 `DSH_NOTIFY_AUMIDS`、安装包注册的 `DeepSeek Harness.lnk` 的 AppUserModelID、最后是内置兜底值。每个候选都会用 WinRT notifier 的 `Setting` 校验是否真的被 Windows 注册，因此通知头能显示真实应用名与图标；最终采用的身份、来源与校验状态会出现在状态接口与设置页。
-- **未读角标**：角标数字表示「有未处理提醒的会话数」（不是提醒条数），同一会话多条提醒只计 1；窗口回到前台即清零；设置页的测试通知不计入。渲染层不支持 Badging API 时自动跳过，不影响其他功能。
 - **程序化提问提醒**：`run_code` 内调用的 `ask_user_question` 不会触发 `user-questions/request`，因此额外监听工具分发事件；两条路径共享「会话 + 问题摘要」的 5 秒去重键，同一提问不会提醒两次，并发会话也不会互相吞掉。
-- **诊断面**：40 条有界决策环记录「为什么没弹」；`GET /desktop-notify/debug` 返回决策、turn 缓存、未读集合与在播音效数；`POST /desktop-notify/silence` 立即停止在播音效。
+- **诊断面**：40 条有界决策环记录「为什么没弹」；`GET /desktop-notify/debug` 返回决策、turn 缓存与在播音效数；`POST /desktop-notify/silence` 立即停止在播音效。
 - **Windows 协议修复**：设置页可重新注册 `dshnotify:` 协议，并在确认后打开系统通知设置。
 
 ## 平台支持
@@ -39,7 +38,6 @@ DeepSeek Harness 桌面端仅提供 Windows 与 macOS 安装包，本插件只�
 | 自定义音频 | **仅 .wav**（SoundPlayer） | `afplay` 支持的格式 |
 | 通知身份 | `DeepSeek Harness`（自动复用安装包快捷方式）+ 应用图标 | terminal-notifier（系统限制） |
 | 交互提示音 | 支持（`SoundPlayer` 播放内置/自定义 .wav） | `afplay` |
-| 未读角标 | 任务栏角标（`navigator.setAppBadge`） | Dock 角标 |
 
 > macOS 上通知会显示为 **terminal-notifier**，不是 DeepSeek Harness。这是 node-notifier/terminal-notifier 3 的已知限制（无法设置 sender/图标）。按钮、声音与点击回传均正常。若需要完全品牌化，可自行构建 terminal-notifier（`make icon ICON=... APP_NAME=...`），并在设置页「高级 → macOS 定制 notifier 路径」中填写。
 
@@ -214,7 +212,7 @@ dsh plugin --profile web add @honorshine/dsh-desktop-notify
 ## 架构
 
 - **Host 插件**（`index.js`）：注册 Cordis Service `desktopNotify`；监听 `approval/request`（`prepend + global`）、`user-questions/request`、`tool/ptc-dispatch-start|dispatch`、`agent/status`、`agent/error`、`agent/disposed`，并只读订阅 `session/event`（结束原因 + 回复文本，按会话有界缓存）；Windows 走 `lib/winrt.js`（WinRT toast + 协议回传 + `assets/resolve-aumid.ps1` 解析通知身份），macOS 走 `lib/notifier.js`（node-notifier / terminal-notifier），`lib/sound.js` 播放通知铃声与交互提示音（两个独立 `SoundPlayer`，8 秒封顶、可立即停止），`lib/presence.js` 维护多窗口焦点；交互提示音在 `approval/request` 与 `user-questions/request` 到达时播放，不检查焦点。
-- **Client 插件**（`client.js`）：始终上报窗口焦点、空闲时间与 locale；在 `settings.section` 注册配置页，通过 `ctx.configForms.get('desktop-notify')` 读写 Host 配置，通过同源 `/desktop-notify/*` 路由做测试、试听、状态查询、诊断与 Windows 协议修复；角标只在窗口隐藏/失焦时轮询。0.2.2+ 注册原生 `settings.section.icon`，0.2.0/0.2.1 用 DOM 补丁（`data-shortcut-modal="settings"` + 标签 `<span>`），失败时保留外壳默认齿轮。
+- **Client 插件**（`client.js`）：始终上报窗口焦点、空闲时间与 locale；在 `settings.section` 注册配置页，通过 `ctx.configForms.get('desktop-notify')` 读写 Host 配置，通过同源 `/desktop-notify/*` 路由做测试、试听、状态查询、诊断与 Windows 协议修复；0.2.2+ 注册原生 `settings.section.icon`，0.2.0/0.2.1 用 DOM 补丁（`data-shortcut-modal="settings"` + 标签 `<span>`），失败时保留外壳默认齿轮。
 - **HTTP 路由**：`/desktop-notify/status|presence|test|preview-sound|preview-attention|open-notification-settings|repair-windows|debug|report|silence`，全部经过 `ctx.connection.requestRejection(req)` 鉴权，JSON body 上限 16 KiB。
 - **Windows 行动作**：`assets/winrt-toast.ps1` 显示 toast；`<action activationType="protocol" arguments="dshnotify:?token=...&decision=...">` 点击后由 `assets/activate.vbs` 写 rendezvous 文件；Host 只在存在待处理按钮时每 300ms 轮询并解析，按 token 解析为审批结果。超时后 400ms 内到达的点击仍会被接收。
 - **审批协同**：只有存在活跃 Client 时才把未决审批委托回原生面板；无 Client 时依赖通知按钮完成，硬上限 2 分钟后以 `unavailable` 关闭。

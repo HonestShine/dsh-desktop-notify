@@ -9,7 +9,6 @@ import { DedupeWindow, questionDedupeKey, recentlyErrored } from '../lib/dedupe.
 import { Diagnostics } from '../lib/diagnostics.js'
 import { Presence } from '../lib/presence.js'
 import { isRootSession } from '../lib/session.js'
-import { UnreadTracker } from '../lib/unread.js'
 import {
   formatApproval,
   formatDuration,
@@ -434,22 +433,6 @@ test('recentlyErrored only suppresses inside the window', () => {
   assert.equal(recentlyErrored(1000, 7000), false)
   assert.equal(recentlyErrored(undefined, 4000), false)
   assert.equal(recentlyErrored('bad', 4000), false)
-})
-
-test('UnreadTracker counts distinct sessions and caps the set', () => {
-  const unread = new UnreadTracker(2)
-  unread.mark('a', 1)
-  unread.mark('a', 2)
-  assert.equal(unread.size, 1)
-  unread.mark('b', 3)
-  assert.equal(unread.size, 2)
-  unread.mark('c', 4)
-  assert.equal(unread.size, 2)
-  assert.deepEqual(unread.snapshot().sessions.sort(), ['b', 'c'])
-  unread.remove('b')
-  assert.equal(unread.size, 1)
-  unread.clear()
-  assert.equal(unread.size, 0)
 })
 
 test('Presence waitForPresent resolves on focus and can be cancelled', async () => {

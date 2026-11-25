@@ -11,7 +11,6 @@ import { installRoutes } from './lib/routes.js'
 import { isRootSession } from './lib/session.js'
 import { SoundPlayer } from './lib/sound.js'
 import { TurnCache } from './lib/turns.js'
-import { UnreadTracker } from './lib/unread.js'
 import { WinRtNotifier } from './lib/winrt.js'
 
 const PLUGIN_DIR = fileURLToPath(new URL('.', import.meta.url))
@@ -108,8 +107,6 @@ export default class DesktopNotifyService extends Service {
     this.agentStatus = new Map()
     /** @type {Map<string, number>} */
     this.agentErrorAt = new Map()
-    /** Session-scoped unread set; the badge mirrors its size. */
-    this.unreadSessions = new UnreadTracker()
     /** Cross-source question dedupe, scoped by session + question text. */
     this.questions = new DedupeWindow(QUESTION_DEDUPE_MS)
     /** Best-effort turn-end context from the committed session events. */
@@ -168,7 +165,6 @@ export default class DesktopNotifyService extends Service {
       },
       pendingApproval: this.pendingApproval !== undefined,
       lastOutcome: this.lastOutcome,
-      unread: this.unread,
     }
   }
 
@@ -188,10 +184,7 @@ export default class DesktopNotifyService extends Service {
    * @param {{ clientId: string, focused: boolean, locale?: string }} report - Presence frame.
    */
   reportPresence(report) {
-    const focused = report?.focused === true
     this.presence.update(report)
-    // Focusing the window means the user is looking again, so the badge clears.
-    if (focused) this.unreadSessions.clear()
   }
 
   /**
@@ -211,9 +204,6 @@ export default class DesktopNotifyService extends Service {
       timeoutSeconds: 60,
     }).then((outcome) => {
       this.lastOutcome = { ...outcome, at: Date.now(), test: true }
-      // A test toast is not a session waiting for an answer, so it must not
-      // inflate the badge. The settings page still shows its outcome through
-      // `lastOutcome.test`.
     }).catch((error) => {
       this.lastOutcome = {
         reason: 'error',
@@ -291,7 +281,6 @@ export default class DesktopNotifyService extends Service {
       ...status,
       diagnostics: this.diagnostics.snapshot(),
       turns: { cached: this.turns.size, running: this.turnStartedAt.size },
-      unreadSessions: this.unreadSessions.snapshot(),
       sounds: {
         notification: { playing: this.sound.playing },
         attention: { playing: this.attentionSound.playing },
@@ -331,7 +320,7 @@ export default class DesktopNotifyService extends Service {
       if (this.#shouldRemind('question')) {
         try {
           const copy = formatQuestion(request, this.#locale(), this.#sessionTitleOf(request?.agent))
-          void this.#remind(copy, { sound: !cued, silent: cued, key: sessionKey })
+          void this.#remind(copy, { sound: !cued, silent: cued })
         } catch (error) {
           this.log(`question reminder failed: ${messageOf(error)}`, 'warn')
         }
@@ -353,7 +342,7 @@ export default class DesktopNotifyService extends Service {
         const cued = this.#cueAttention()
         if (!this.#shouldRemind('question')) return
         const copy = formatPtcQuestion(payload, this.#locale(), this.#sessionTitleOf(payload?.agent))
-        void this.#remind(copy, { sound: !cued, silent: cued, key: sessionKey })
+        void this.#remind(copy, { sound: !cued, silent: cued })
       } catch (error) {
         this.log(`programmatic question reminder failed: ${messageOf(error)}`, 'warn')
       }
@@ -391,7 +380,6 @@ export default class DesktopNotifyService extends Service {
             text: turn?.text,
             durationSeconds,
           }),
-          { key: this.#sessionKey(agent) },
         )
       } catch (error) {
         this.log(`turn reminder failed: ${messageOf(error)}`, 'warn')
@@ -414,7 +402,7 @@ export default class DesktopNotifyService extends Service {
         }
         if (!this.#shouldRemind('errors')) return
         this.agentErrorAt.set(agent.id, now)
-        void this.#remind(copy, { key: this.#sessionKey(agent) })
+        void this.#remind(copy)
       } catch (error) {
         this.log(`error reminder failed: ${messageOf(error)}`, 'warn')
       }
@@ -428,7 +416,6 @@ export default class DesktopNotifyService extends Service {
         this.turnStartedAt.delete(id)
         const sessionId = agent?.session?.id
         this.turns.delete(typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : id)
-        this.unreadSessions.remove(this.#sessionKey(agent))
       }
     }, { global: true })
   }
@@ -563,8 +550,8 @@ export default class DesktopNotifyService extends Service {
   }
 
   /**
-   * The identity used for session-scoped unread tracking. Prefers the Session
-   * id, because one agent can survive across turns; falls back to the Agent id.
+   * Stable session identity used by question dedupe. Prefers the Session id,
+   * because one agent can survive across turns; falls back to the Agent id.
    * @param {object | undefined} agent - Live Agent.
    * @returns {string} Stable key, or an empty string when neither id exists.
    */
@@ -594,7 +581,7 @@ export default class DesktopNotifyService extends Service {
   /**
    * Show a non-interactive reminder and play the configured sound.
    * @param {{ title: string, body: string }} copy - Notification copy.
-   * @param {{ sound?: boolean, silent?: boolean, key?: string }} [options] - Key scopes the unread entry.
+   * @param {{ sound?: boolean, silent?: boolean }} [options] - Per-reminder switches.
    * @returns {Promise<void>}
    */
   async #remind(copy, options = {}) {
@@ -608,10 +595,7 @@ export default class DesktopNotifyService extends Service {
       // Transports report failures by resolving { reason: 'error' } instead of
       // rejecting; ignoring that shape is what made a broken toast look
       // successful. Record it so the settings page can show the last failure.
-      if (outcome?.reason !== 'error') {
-        this.unreadSessions.mark(options.key)
-        return
-      }
+      if (outcome?.reason !== 'error') return
       const detail = String(outcome.error ?? 'unknown error')
       this.lastOutcome = { reason: 'error', error: detail, at: Date.now(), remind: true }
       this.log(`reminder notification failed: ${detail}`, 'warn')
@@ -631,11 +615,6 @@ export default class DesktopNotifyService extends Service {
   }
 
   #recent = new Map()
-
-  /** Distinct sessions with unread reminders; the badge mirrors this count. */
-  get unread() {
-    return this.unreadSessions.size
-  }
 
   #locale() {
     return this.presence.locale() ?? detectLocale()

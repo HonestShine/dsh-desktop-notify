@@ -207,7 +207,6 @@ window.__ModuleLoader__.load({
       nativeIconActive = false
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'desktop-notify: locale')
       ctx.effect(() => installStyles(), 'desktop-notify: styles')
-      ctx.effect(() => startBadgeSync(), 'desktop-notify: badge')
       let idleSeconds = () => 180
       // Older compositions may not provide configForms. Notifications and the
       // presence reporter still work; only the settings page is absent.
@@ -1061,93 +1060,6 @@ window.__ModuleLoader__.load({
     return { inject, apply }
   },
 })
-
-/**
- * Mirror the Host unread-reminder counter onto the app badge. Chromium exposes
- * the Badging API on Windows and macOS; a composition without it keeps running
- * with no badge. The badge is cosmetic, so polling failures stay silent.
- * @returns {() => void} Disposer.
- */
-function startBadgeSync() {
-  if (typeof navigator === 'undefined' || typeof window === 'undefined') return () => {}
-  const canSet = typeof navigator.setAppBadge === 'function'
-  const canClear = typeof navigator.clearAppBadge === 'function'
-  if (!canSet && !canClear) return () => {}
-  let stopped = false
-  let last = -1
-  let timer
-  let reportedFailure = false
-  const sync = async () => {
-    if (stopped) return
-    try {
-      const status = await fetchJson(`${BASE}/status`, {}, true)
-      const unread = Number(status?.unread ?? 0)
-      reportedFailure = false
-      if (!Number.isFinite(unread) || unread === last) return
-      last = unread
-      if (unread > 0) {
-        if (canSet) await navigator.setAppBadge(unread)
-      } else if (canClear) {
-        await navigator.clearAppBadge()
-      }
-    } catch {
-      // A badge is cosmetic; a failed poll is not worth surfacing. Report it
-      // once so `/debug` can explain a badge that never appeared.
-      if (!reportedFailure) {
-        reportedFailure = true
-        reportDiagnostic('badge sync failed')
-      }
-    }
-  }
-  // The badge only matters while the window is in the background. Polling while
-  // focused is redundant (the Host clears unread on a focused presence report)
-  // and costs one request every five seconds.
-  const shouldPoll = () => typeof document !== 'undefined'
-    && (document.visibilityState === 'hidden' || !document.hasFocus())
-  const stopPolling = () => {
-    if (timer === undefined) return
-    window.clearInterval(timer)
-    timer = undefined
-  }
-  const reconcile = () => {
-    if (stopped) return
-    if (!shouldPoll()) {
-      stopPolling()
-      // The Host clears unread on focus; mirror that locally without a request.
-      if (last > 0 && canClear) {
-        last = 0
-        try {
-          void navigator.clearAppBadge()
-        } catch {
-          // Ignore a renderer that revoked badge support mid-session.
-        }
-      }
-      return
-    }
-    if (timer === undefined) timer = window.setInterval(() => { void sync() }, 5000)
-    void sync()
-  }
-  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', reconcile)
-  if (typeof window !== 'undefined') {
-    window.addEventListener('focus', reconcile)
-    window.addEventListener('blur', reconcile)
-  }
-  reconcile()
-  return () => {
-    stopped = true
-    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', reconcile)
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('focus', reconcile)
-      window.removeEventListener('blur', reconcile)
-    }
-    stopPolling()
-    try {
-      if (canClear) void navigator.clearAppBadge()
-    } catch {
-      // Ignore a renderer that revoked badge support mid-session.
-    }
-  }
-}
 
 /** Inject the plugin's stylesheet once per page and return its disposer. */
 function installStyles() {
