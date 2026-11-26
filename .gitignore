@@ -34,3 +34,6 @@ desktop.ini
 
 # GitHub issue watch state (scheduled issue maintenance task)
 .issue-watch.json
+
+# Download stats workspace (local-only, not version controlled)
+download-stats/
