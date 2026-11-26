@@ -257,7 +257,7 @@ node scripts/make-chime.mjs        # 重新生成 assets/notify.wav 与 assets/a
 
 ## 版本与发布
 
-- 版本历史见 [CHANGELOG.md](../CHANGELOG.md)。
+- 版本历史：中文翻译见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)，英文主文档见 [CHANGELOG.md](../CHANGELOG.md)。
 - 发布包：GitHub Releases（`v0.1.0` 起）；同时发布到 npm：`@honorshine/dsh-desktop-notify`。
 
 ## 文档

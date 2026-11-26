@@ -1,181 +1,165 @@
 # Changelog
 
-本项目的所有重要变更都会记录在此文件。
+All notable changes to this project are documented in this file.
 
-格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
-版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
+
+Chinese translation: [docs/CHANGELOG.zh-CN.md](docs/CHANGELOG.zh-CN.md).
 
 ## [0.2.4] - 2026-11-25
 
-### 移除
+### Removed
 
-- **未读角标与消息计数**：删除 Host 侧的未读集合、`/status` 的 `unread` / `badge` 字段、审批与提醒的未读记账，以及客户端 `setAppBadge` / `clearAppBadge` 同步和设置页「未读角标」分组。
-- **托盘适配预留**：删除 `window.dshDesktop.setAttention` 分支；插件不再尝试控制 DSH 核心托盘，也不做托盘闪烁。
+- **Unread badge and message counts**: removed the Host-side unread set, the `unread` / `badge` fields from `/status`, unread bookkeeping for approvals and reminders, client-side `setAppBadge` / `clearAppBadge` synchronization, and the "Unread badge" group in the settings page.
+- **Tray integration scaffolding**: removed the `window.dshDesktop.setAttention` branch; the plugin no longer attempts to control the DSH core tray or blink it.
 
-### 变更
+### Changed
 
-- 通知、审批 waterfall、`dshnotify:` 回传、音效、presence、诊断与平台逻辑保持不变。
-- README / 中文 README 不再宣传角标、托盘状态或消息计数。
+- Notifications, the approval waterfall, `dshnotify:` callback, sounds, presence, diagnostics, and platform logic are unchanged.
+- README / Chinese README no longer advertise badges, tray status, or message counts.
 
 ## [0.2.3] - 2026-11-21
 
-### 新增
+### Added
 
-- **结束原因与回复摘要**：监听 `session/event` 的 `turn/end` 与 `assistant/message`，任务完成提醒区分 `completed` / `blocked` / `max-tokens` / `aborted` / `interrupted` / `error`；完成类提醒附带最后一条回复的扁平化摘要（≤110 字）与用时。`session/event` 不可用时自动回退到 0.2.1 的通用文案。
-- **诊断面**：新增 40 条有界决策环；`GET /desktop-notify/debug` 返回状态、决策记录、turn 缓存、未读集合与在播音效数；`POST /desktop-notify/report` 供客户端上报；`POST /desktop-notify/silence` 立即停止在播音效。
-- **音效治理**：`SoundPlayer` 登记在播子进程，8 秒封顶；回窗、禁用、静音模式下立即停止；插件卸载时清理。
-- **点击宽限**：审批超时后保留 400ms 宽限，超时边界上的按钮点击仍会被接收，不再被丢弃。
-- **Windows 身份预热**：启动 1.5 秒后后台解析 AUMID 与协议，降低首次审批通知的冷启动延迟。
+- **Turn-end reasons and reply summary**: listens to `session/event` `turn/end` and `assistant/message`; completion reminders distinguish `completed` / `blocked` / `max-tokens` / `aborted` / `interrupted` / `error`; completion reminders include a flattened summary of the last reply (≤110 characters) and the elapsed time. Falls back to the generic 0.2.1 copy when `session/event` is unavailable.
+- **Diagnostics surface**: bounded 40-entry decision ring; `GET /desktop-notify/debug` returns status, decisions, turn cache, unread set, and active sound count; `POST /desktop-notify/report` for client reports; `POST /desktop-notify/silence` stops active sounds immediately.
+- **Sound governance**: `SoundPlayer` tracks playing child processes with an 8-second cap; stops immediately on window refocus, disable, or mute; cleans up on plugin unload.
+- **Click grace period**: a 400 ms grace window after approval timeout so button clicks at the timeout boundary are still accepted instead of dropped.
+- **Windows identity prewarm**: resolves the AUMID and protocol in the background 1.5 seconds after startup, reducing cold-start latency for the first approval notification.
 
-### 变更
+### Changed
 
-- **未读改为会话级**：角标数字表示「有未处理提醒的会话数」，同一会话多条提醒只计 1；设置页的测试通知不再计入角标。
-- **提问去重**：从 2 秒全局时间槽改为「会话 + 问题摘要前 40 字」的 5 秒窗口；两个会话并发提问不再互相吞掉，同一提问的瀑布/PTC 双源仍只提醒一次。
-- **回窗竞速**：审批始终参与 `whenPresent()` 竞速，并新增可取消 waiter；无 live client 时打开窗口也能撤回通知。
-- **按需轮询**：Windows rendezvous 目录只在存在待处理按钮时每 300ms 轮询，空闲时停止；角标只在窗口隐藏/失焦时每 5 秒同步，聚焦时本地清除并停止请求。
-- **文案预算**：标题 48 字、正文 120 字，减少 Windows toast 在系统侧被截断。
+- **Session-level unread**: the badge number means "number of sessions with pending reminders"; multiple reminders in one session count once; test notifications from the settings page no longer count toward the badge.
+- **Question dedupe**: changed from a 2-second global slot to a 5-second window keyed by "session + first 40 characters of the question summary"; concurrent questions in two sessions no longer swallow each other, and a single question from both waterfall/PTC sources still notifies only once.
+- **Window-return race**: approvals always participate in the `whenPresent()` race, with a new cancellable waiter; notifications can now be withdrawn even when the window opens without a live client.
+- **On-demand polling**: the Windows rendezvous directory is polled every 300 ms only while pending buttons exist, and stops when idle; the badge syncs every 5 seconds only while the window is hidden/unfocused, and clears locally and stops requesting when focused.
+- **Copy budget**: title 48 characters, body 120 characters, reducing Windows toast truncation on the system side.
 
-### 修复
+### Fixed
 
-- **错误后重复完成**：`agent/error` 后 5 秒内的 `idle` 不再补一条「回复完成」；`agentErrorAt` 从只写不读改为真正参与门控。
-- **测试通知污染角标**：测试通知不再增加未读计数，设置页仍通过 `lastOutcome.test` 展示结果。
-- **会话销毁清理**：`agent/disposed` 同时清理 turn 缓存、计时与未读条目。
+- **Duplicate completion after error**: `idle` within 5 seconds after `agent/error` no longer appends a "reply complete" reminder; `agentErrorAt` is now actually used for gating instead of being write-only.
+- **Test notifications polluting the badge**: test notifications no longer increase the unread count; the settings page still shows results via `lastOutcome.test`.
+- **Session disposal cleanup**: `agent/disposed` now also clears the turn cache, timers, and unread entries.
 
-### 兼容性
+### Compatibility
 
-- **平台收敛**：仅支持 DeepSeek Harness 桌面端的 Windows 与 macOS；移除 Linux 的 `notify-send` / `paplay` / `canberra-gtk-play` / `aplay` 代码路径与文档，非 Windows/macOS 平台返回「不支持」。DSH Web 端不作为目标。
-- 0.2.3 之前的版本曾包含 Linux 分支，自 0.2.3 起不再维护。
-- 无新增运行时依赖，仍为纯 ESM JavaScript；Node 范围不变。
-- 若 Host 未把 `session/event` 转发给插件，结束原因缓存为空，提醒退回 0.2.1 的文案与行为。
-- 配置变更仍会重载 Host 插件（见 README「已知限制」）；改动设置时若有审批正在进行，通知会被关闭并回退面板。
+- **Platform convergence**: only Windows and macOS are supported for the DeepSeek Harness desktop app; removed Linux `notify-send` / `paplay` / `canberra-gtk-play` / `aplay` code paths and docs; non-Windows/macOS platforms return "unsupported". DSH Web is not a target.
+- Versions before 0.2.3 included a Linux branch; it is no longer maintained since 0.2.3.
+- No new runtime dependencies; still pure ESM JavaScript; Node range unchanged.
+- If the Host does not forward `session/event` to plugins, the turn-end reason cache stays empty and reminders fall back to 0.2.1 copy and behavior.
+- Config changes still reload the Host plugin (see "Known limitations" in the README); if an approval is in progress while changing settings, the notification is closed and the panel is restored.
 
 ## [0.2.2] - 2026-11-21
 
-### 新增
+### Added
 
-- 在 `package.json` 声明宿主版本要求 `engines.dsh: >=0.2.0-rc.2 <0.3.0-0`，插件市场会显示 DSH 版本要求（此前显示「未声明宿主要求」）。
+- Declared the host version requirement in `package.json` as `engines.dsh: >=0.2.0-rc.2 <0.3.0-0`; the plugin market now displays the DSH version requirement (previously "host requirement not declared").
 
-### 文档
+### Documentation
 
-- README / 中文 README 补充 `engines.dsh` 声明说明。
+- README / Chinese README document the `engines.dsh` declaration.
 
 ## [0.2.1] - 2026-11-19
 
-### 兼容性
+### Compatibility
 
-- 适配 DSH `0.2.2-rc.5`：该版本仅优化搜索行为（DeepSeek 模型使用服务端搜索、不计次收费），与插件相关的 settings/approval/question/typert/connection 接口文件逐项比对与 rc.4 一致，插件代码无需改动。
-- `0.2.2-rc.5` 仍携带 `@deepseek-ai/cordis 4.1.0`、`@deepseek-ai/schemastery 3.19.0`，现有 peer 范围 `^4.0.0` / `^3.18.0` 覆盖。
+- Adapted to DSH `0.2.2-rc.5`: this release only optimizes search behavior (DeepSeek models use server-side search with no per-search charge); the plugin-facing settings/approval/question/typert/connection interface files were compared item by item and are identical to rc.4, so no plugin code changes were required.
+- `0.2.2-rc.5` still ships `@deepseek-ai/cordis 4.1.0` and `@deepseek-ai/schemastery 3.19.0`, covered by the existing peer ranges `^4.0.0` / `^3.18.0`.
 
 ## [0.2.0] - 2026-11-19
 
-### 新增
+### Added
 
-- **未读角标**：每条提醒累加未读计数，客户端每 5 秒同步到应用角标（Windows 任务栏 / macOS Dock），窗口回到前台即清零；渲染层无 `navigator.setAppBadge` 时自动跳过。状态接口新增 `unread` 字段。
-- **程序化提问提醒**：`run_code` 内调用 `ask_user_question` 时不会触发 `user-questions/request`（实测确认），新增对 `tool/ptc-dispatch-start` / `tool/ptc-dispatch` 的监听补上这类提醒。两条路径共享两秒去重槽，避免重复通知。
-- **Windows 通知身份多候选**：`windows.appId` 支持分号分隔多个候选，并新增环境变量 `DSH_NOTIFY_AUMIDS`；候选按「配置 → 环境变量 → 快捷方式 → 内置兜底」顺序，用 `CreateToastNotifier(id).Setting` 校验是否被系统注册。状态接口新增 `appIdValidated` 与候选列表。
+- **Unread badge**: each reminder increments an unread counter; the client syncs it to the app badge every 5 seconds (Windows taskbar / macOS Dock) and clears it when the window returns to the foreground; automatically skipped when the renderer lacks `navigator.setAppBadge`. The status API adds an `unread` field.
+- **Programmatic question reminders**: `ask_user_question` called inside `run_code` does not emit `user-questions/request` (verified); added listeners for `tool/ptc-dispatch-start` / `tool/ptc-dispatch` to cover these reminders. Both paths share a 2-second dedupe slot to avoid duplicate notifications.
+- **Multiple Windows notification identity candidates**: `windows.appId` accepts semicolon-separated candidates and adds the `DSH_NOTIFY_AUMIDS` environment variable; candidates are tried in the order "config → environment variable → shortcut → built-in fallback" and validated via `CreateToastNotifier(id).Setting` to check whether the system has registered them. The status API adds `appIdValidated` and the candidate list.
 
-### 修复
+### Fixed
 
-- **PowerShell 绝对路径**：`lib/winrt.js` 之前用裸名 `powershell.exe`（依赖 PATH），PATH 被裁剪或被劫持时 toast 会静默失败且退出码为 0。现改为优先使用 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`，与同文件 `wscript.exe` 的写法对齐。
-- **提醒失败不再静默**：传输层失败时 resolve `{ reason: 'error' }` 而不是 reject，原提醒路径只处理 reject，导致失败被完全吞掉。现在会记录 `lastOutcome` 并写日志。
-- **测试通知计入未读**：设置页「发送测试通知」现在与其他提醒一样累加未读计数，避免角标统计口径不一致。
+- **PowerShell absolute path**: `lib/winrt.js` used the bare name `powershell.exe` (PATH-dependent); when PATH was trimmed or hijacked, toasts failed silently with exit code 0. It now prefers `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, consistent with `wscript.exe` in the same file.
+- **Delivery failures are no longer silent**: transport failures resolve `{ reason: 'error' }` instead of rejecting, but the reminder path only handled rejections, so failures were swallowed. They now record `lastOutcome` and log.
+- **Test notifications counted as unread**: the settings page's "Send test notification" now increments the unread counter like other reminders, keeping badge statistics consistent.
 
-### 文档
+### Documentation
 
-- README / 中文 README 补充未读角标、程序化提问提醒、通知身份候选链与平台支持表。
-- 新增 `docs/research/competitor-notify-plugins.md`：两个同类插件的对标调研与灵感清单。
+- README / Chinese README document the unread badge, programmatic question reminders, the notification identity candidate chain, and the platform support table.
+- Added `docs/research/competitor-notify-plugins.md`: benchmarking of two similar plugins and an inspiration list.
 
 ## [0.1.3] - 2026-11-18
 
-### 兼容性
+### Compatibility
 
-- 适配 DSH `0.2.2-rc.4`：该版本为修复版本（模型异常响应处理、LiveShare 桌面端创建分享），与插件相关的接口文件（settings/approval/question/typert/connection）逐项比对与 rc.3 一致，插件代码无需改动。
-- `0.2.2-rc.4` 仍携带 `@deepseek-ai/cordis 4.1.0`、`@deepseek-ai/schemastery 3.19.0`，现有 peer 范围 `^4.0.0` / `^3.18.0` 覆盖。
+- Adapted to DSH `0.2.2-rc.4`: a bugfix release (model abnormal-response handling, LiveShare desktop sharing creation); the plugin-facing interface files (settings/approval/question/typert/connection) are identical to rc.3, so no plugin code changes were required.
+- `0.2.2-rc.4` still ships `@deepseek-ai/cordis 4.1.0` and `@deepseek-ai/schemastery 3.19.0`, covered by the existing peer ranges `^4.0.0` / `^3.18.0`.
 
 ## [0.1.2] - 2026-11-16
 
-### 兼容性
+### Compatibility
 
-- 适配 DSH `0.2.2-rc.2` / `0.2.2-rc.3`：核对 approval/question/settings/typert/connection 相关接口，仅有向后兼容变化（`settings.section` 的 `openSettings` 增加可选 `sectionId`、`ui-approval` 插槽增加可选 `warning` 字段、user-questions 放宽历史 fork 提问），插件代码无需改动。
-- 确认 `0.2.2-rc.3` 携带 `@deepseek-ai/cordis 4.1.0`、`@deepseek-ai/schemastery 3.19.0`，现有 peer 范围 `^4.0.0` / `^3.18.0` 覆盖。
+- Adapted to DSH `0.2.2-rc.2` / `0.2.2-rc.3`: reviewed the approval/question/settings/typert/connection interfaces; only backward-compatible changes (`settings.section`'s `openSettings` gains an optional `sectionId`, the `ui-approval` slot gains an optional `warning` field, user-questions relaxes historical fork questions), so no plugin code changes were required.
+- Confirmed `0.2.2-rc.3` ships `@deepseek-ai/cordis 4.1.0` and `@deepseek-ai/schemastery 3.19.0`, covered by the existing peer ranges `^4.0.0` / `^3.18.0`.
 
-### 变更
+### Changed
 
-- 包名改为 `@honorshine/dsh-desktop-notify` 并发布到 npm（scoped、public access）；`cordis.patch.yml` 与 `client.js` 的模块 id 同步更新；`package.json` 增加 `main`、`publishConfig.access`，移除 `private`。
+- Renamed the package to `@honorshine/dsh-desktop-notify` and published it to npm (scoped, public access); module ids in `cordis.patch.yml` and `client.js` were updated accordingly; `package.json` gains `main`, `publishConfig.access`, and drops `private`.
 
-### 文档
+### Documentation
 
-- README 拆分为英文入口 `README.md` 与中文介绍 `docs/README.zh-CN.md`；介绍文档统一放在 `docs/` 下。
-- 新增插件市场配图 `screenshots.json` 与 `docs/screenshots/{toast,settings}.png`。
+- README split into the English entry `README.md` and the Chinese introduction `docs/README.zh-CN.md`; introduction docs now live under `docs/`.
+- Added plugin market images `screenshots.json` and `docs/screenshots/{toast,settings}.png`.
 
 ## [0.1.1] - 2026-11-07
 
-### 新增
+### Added
 
-- **交互提示音**：权限确认（`approval/request`）与提问/计划征询（`user-questions/request`）触发时播放
-  独立提示音，与通知铃声分开配置（`bundled` / `custom` / `none`，可试听）。它**不检查窗口焦点**，
-  窗口在前台、显示应用内审批面板时也会响；同一提示 800ms 内去重，并静音该次交互 toast 的自带提示音
-  避免双响。内置 `assets/alert.wav` 为三连上行短音，与通知铃声（双音钟声）明显不同。
-- 设置页新增「交互提示音」分组；新增 `POST /desktop-notify/preview-attention` 试听接口。
+- **Interaction cue**: permission confirmations (`approval/request`) and questions/plan inquiries (`user-questions/request`) play an independent cue sound, configured separately from the notification sound (`bundled` / `custom` / `none`, with preview). It **ignores window focus** and plays even when the window is in the foreground showing the in-app approval panel; identical cues are deduped within 800 ms and the notification sound for that interaction toast is muted to avoid double beeps. The bundled `assets/alert.wav` is a three-note rising chime, clearly different from the notification sound (two-note bell).
+- Settings page gains an "Interaction cue" group; new `POST /desktop-notify/preview-attention` preview endpoint.
 
-### 变更
+### Changed
 
-- **通知服务生命周期**：插件加载/启用时注册 `dshnotify:` 协议（注册时写入每实例 nonce），
-  禁用或卸载时自动注销协议并清理 `%LOCALAPPDATA%\dsh-desktop-notify` 轮询目录；插件重载时
-  旧实例的注销因 nonce 不匹配而跳过，不会误删新实例的注册。设置页的「修复通知按钮协议」仍保留。
-- 安装章节改为 DSH 生态的两种方式：本地目录 / 压缩包（`dsh plugin --profile web add link:...`、`file:...`，
-  含 Release tarball），以及直接从 GitHub 安装（`dsh plugin --profile web add github:HonestShine/dsh-desktop-notify`）。
+- **Notification service lifecycle**: the plugin registers the `dshnotify:` protocol on load/enable (each instance's nonce is written at registration), and automatically unregisters it and cleans the `%LOCALAPPDATA%\dsh-desktop-notify` polling directory on disable or uninstall; when the plugin reloads, the old instance's unregistration is skipped due to the nonce mismatch, so it never deletes the new instance's registration. The settings page's "Repair notification button protocol" remains.
+- The installation section now covers the two DSH ecosystem methods: local directory / archive (`dsh plugin --profile web add link:...`, `file:...`, including the Release tarball), and direct install from GitHub (`dsh plugin --profile web add github:HonestShine/dsh-desktop-notify`).
 
-### 修复
+### Fixed
 
-- **Windows 通知身份**：通知头此前显示 AUMID 原文（`com.deepseek.dsh`）和默认图标，而不是应用名与图标。
-  现在 `assets/resolve-aumid.ps1` 会读取开始菜单里已注册的 `DeepSeek Harness.lnk` 的 AppUserModelID，
-  通知头显示 **DeepSeek Harness**；toast XML 同时带上安装目录 `resources/icon.png` 作为
-  `appLogoOverride`，确保通知内显示鲸鱼图标。`windows.appId` 默认改为留空（自动识别），仅在自动
-  识别失败时需要手工覆盖。
-- `WinRtNotifier.close()` 现在使用解析后的 AUMID 关闭 toast（此前用配置里的 `windows.appId`，
-  留空自动识别时无法关闭已显示的通知）。
+- **Windows notification identity**: the notification header previously showed the raw AUMID (`com.deepseek.dsh`) and the default icon instead of the app name and icon. `assets/resolve-aumid.ps1` now reads the AppUserModelID of the registered `DeepSeek Harness.lnk` from the Start Menu, so the header shows **DeepSeek Harness**; the toast XML also carries the install directory's `resources/icon.png` as `appLogoOverride`, ensuring the whale icon appears in the notification. `windows.appId` now defaults to empty (auto-detect) and only needs a manual override when auto-detection fails.
+- `WinRtNotifier.close()` now closes toasts using the resolved AUMID (previously it used the configured `windows.appId`, which could not close displayed notifications when it was empty for auto-detect).
 
 ## [0.1.0] - 2026-11-07
 
-首个公开版本。适配 DeepSeek Harness `0.2.0-rc.2` / `0.2.1-rc.x` / `0.2.2-rc.1`。
+First public release. Adapted to DeepSeek Harness `0.2.0-rc.2` / `0.2.1-rc.x` / `0.2.2-rc.1`. Linux support present in this historical release was removed in 0.2.3 (see the 0.2.3 compatibility notes).
 
-### 新增
+### Added
 
-- **原生桌面通知**：Windows 使用 WinRT Toast（PowerShell），macOS 使用 terminal-notifier，Linux 使用 `notify-send`。
-- **通知内审批按钮**：权限确认通知附带「拒绝」「允许一次」，通过 Windows 自定义协议 `dshnotify:` + VBS 回传
-  rendezvous JSON，直接把结果交回 Host 的 `approval/request` waterfall。
-- **前台回退**：窗口在前台、用户切回前台或通知超时后，自动退回 DSH 原生审批面板。
-- **事件提醒**：提问（`user-questions/request`）、任务完成（根会话 `running → idle`）、会话错误
-  （`agent/error`，2 秒去重），三类提醒可单独开关并可限制为仅后台。
-- **离开判定**：窗口虽在前台但超过 `presence.idleSeconds`（默认 180 秒，0 关闭）无键鼠输入时按离开处理。
-- **会话标题**：通知正文优先使用会话标题，回退到工作目录名。
-- **设置页**：0.2.0/0.2.1 通过 DOM 补丁给「通知提醒」入口加铃铛图标，0.2.2+ 使用原生
-  `settings.section.icon`，失败时静默回落到默认齿轮。
-- **通知铃声**：`system` / `bundled` / `custom` / `none` 四种模式，支持试听；内置原创提示音
-  `assets/notify.wav`。
-- **可复用服务**：Host 注册 `ctx.desktopNotify`，其他插件可调用 `show()` 弹出带按钮的通知。
-- **Windows 协议修复**：设置页可重新注册 `dshnotify:` 协议，并在确认后打开系统通知设置。
+- **Native desktop notifications**: Windows uses WinRT Toast (PowerShell), macOS uses terminal-notifier, Linux uses `notify-send`.
+- **In-notification approval buttons**: permission notifications carry "Deny" / "Allow once", which feed the result back into the Host's `approval/request` waterfall via the Windows custom protocol `dshnotify:` + VBS rendezvous JSON.
+- **Foreground fallback**: when the window is in the foreground, the user switches back to the foreground, or the notification times out, the DSH native approval panel is restored automatically.
+- **Event reminders**: questions (`user-questions/request`), task completion (root session `running → idle`), and session errors (`agent/error`, 2-second dedupe); each of the three can be toggled separately and restricted to background only.
+- **Away detection**: if the window is in the foreground but there is no keyboard/mouse input for longer than `presence.idleSeconds` (default 180 seconds, 0 disables), it is treated as away.
+- **Session title**: the notification body prefers the session title, falling back to the working directory name.
+- **Settings page**: 0.2.0/0.2.1 add a bell icon to the "Notification reminders" entry via a DOM patch; 0.2.2+ uses the native `settings.section.icon`, falling back silently to the default gear on failure.
+- **Notification sounds**: `system` / `bundled` / `custom` / `none` modes with preview; bundled original chime `assets/notify.wav`.
+- **Reusable service**: the Host registers `ctx.desktopNotify`; other plugins can call `show()` to display notifications with buttons.
+- **Windows protocol repair**: the settings page can re-register the `dshnotify:` protocol and open system notification settings after confirmation.
 
-### 安全
+### Security
 
-- `dshnotify:` 协议回传的 `token` 与 `decision` 在 `assets/activate.vbs` 与 `lib/winrt.js` 两层校验：
-  token 必须是本插件生成的 UUID，decision 必须匹配协议安全字符集，构造的 URI 无法借 token 路径穿越或覆盖
-  rendezvous 目录外的文件。
+- The `token` and `decision` returned by the `dshnotify:` protocol are validated in two layers, `assets/activate.vbs` and `lib/winrt.js`: the token must be a UUID generated by this plugin and the decision must match the protocol-safe charset, so constructed URIs cannot use the token path to traverse or overwrite files outside the rendezvous directory.
 
-### 兼容性
+### Compatibility
 
-- peer 依赖放宽为 `@deepseek-ai/cordis ^4.0.0`、`@deepseek-ai/schemastery ^3.18.0`，同时兼容
-  0.2.0 的 cordis `~4.0.4` / schemastery `~3.18.4` 与 0.2.2 的 cordis `~4.1.0` / schemastery `~3.19.0`。
-- `displayReason` 按 0.2.x 的 `{ en, zh, ... }` 本地化对象处理，并随界面语言取值。
-- `configForms` 改为可选注入：缺失时通知、审批、presence 仍工作，仅不显示设置页。
+- Peer dependencies relaxed to `@deepseek-ai/cordis ^4.0.0` and `@deepseek-ai/schemastery ^3.18.0`, compatible with both 0.2.0's cordis `~4.0.4` / schemastery `~3.18.4` and 0.2.2's cordis `~4.1.0` / schemastery `~3.19.0`.
+- `displayReason` handles the 0.2.x `{ en, zh, ... }` localized object and follows the UI language.
+- `configForms` is now an optional injection: without it, notifications, approvals, and presence still work; only the settings page is not shown.
 
-### 已知限制
+### Known limitations
 
-- macOS 通知身份显示为 terminal-notifier（node-notifier 限制）。
-- Windows 自定义音频仅支持 `.wav`；按钮回传依赖 Host 进程存活。
-- Linux 通知内按钮需要 libnotify 0.7.10+ 且通知守护进程支持 actions。
-- 关闭应用后不会补发通知。
+- macOS notification identity shows terminal-notifier (node-notifier limitation).
+- Windows custom audio supports `.wav` only; button callbacks depend on the Host process staying alive.
+- Linux in-notification buttons require libnotify 0.7.10+ and a notification daemon that supports actions.
+- Notifications are not re-sent after the app is closed.
 
 [0.1.0]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.0
 [0.1.1]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.1.1
@@ -184,3 +168,5 @@
 [0.2.0]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.2.0
 [0.2.1]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.2.1
 [0.2.2]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.2.2
+[0.2.3]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.2.3
+[0.2.4]: https://github.com/HonestShine/dsh-desktop-notify/releases/tag/v0.2.4

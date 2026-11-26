@@ -258,7 +258,7 @@ The bell icon, idle-away detection and session-title body are interactions inspi
 
 ## Versioning & releases
 
-- Version history: [CHANGELOG.md](CHANGELOG.md).
+- Version history: [CHANGELOG.md](CHANGELOG.md) (English). Chinese translation: [docs/CHANGELOG.zh-CN.md](docs/CHANGELOG.zh-CN.md).
 - Releases: GitHub Releases (since `v0.1.0`); the package is also published to npm as `@honorshine/dsh-desktop-notify`.
 
 ## Documentation
